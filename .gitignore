@@ -1,0 +1,103 @@
+## =========================================================================
+## Enterprise POS Platform (.NET 10 / Microservices / Docker) .gitignore
+## =========================================================================
+
+# -------------------------------------------------------------------------
+# 1. Build Outputs & Intermediate Files (.NET / C#)
+# -------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+Generated_Code/
+
+# -------------------------------------------------------------------------
+# 2. Visual Studio / Visual Studio Code / JetBrains Rider
+# -------------------------------------------------------------------------
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.DotSettings.user
+
+# -------------------------------------------------------------------------
+# 3. Sensitive Configuration & Secrets (Crucial for Security)
+# -------------------------------------------------------------------------
+# Never commit real secrets, credentials or private keys to git
+*.env
+*.env.local
+*.env.*.local
+appsettings.*.local.json
+secrets.json
+
+# Certificates & Private Keys
+*.pfx
+*.p12
+*.cer
+*.key
+*.pem
+*.crt
+
+# -------------------------------------------------------------------------
+# 4. Docker & Local Infrastructure Artifacts
+# -------------------------------------------------------------------------
+docker-compose.override.yml
+deploy/docker/data/
+deploy/docker/pgdata/
+deploy/docker/rabbitmq_data/
+
+# -------------------------------------------------------------------------
+# 5. Unit Testing, Code Coverage & Test Results
+# -------------------------------------------------------------------------
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+
+# -------------------------------------------------------------------------
+# 6. NuGet Packages & Local Caches
+# -------------------------------------------------------------------------
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# -------------------------------------------------------------------------
+# 7. Architecture & Diagram Backups (Draw.io / Office)
+# -------------------------------------------------------------------------
+.$*.drawio.bkp
+*.drawio.dtmp
+~$*
+.~lock.*
+
+# -------------------------------------------------------------------------
+# 8. Operating System Junk
+# -------------------------------------------------------------------------
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~

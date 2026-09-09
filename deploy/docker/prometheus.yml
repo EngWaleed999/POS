@@ -1,0 +1,28 @@
+# =============================================================================
+# Prometheus Configuration for SuperMarket POS Platform
+# =============================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Microservices metrics (can be enabled once apps expose /metrics via OpenTelemetry/Prometheus-net)
+  # - job_name: "pos-gateway"
+  #   static_configs:
+  #     - targets: ["host.docker.internal:5000"]
+  # - job_name: "pos-sales-api"
+  #   static_configs:
+  #     - targets: ["host.docker.internal:5001"]
+  # - job_name: "pos-inventory-api"
+  #   static_configs:
+  #     - targets: ["host.docker.internal:5002"]
+  # - job_name: "pos-identity-api"
+  #   static_configs:
+  #     - targets: ["host.docker.internal:5003"]
+  # - job_name: "pos-operations-api"
+  #   static_configs:
+  #     - targets: ["host.docker.internal:5004"]

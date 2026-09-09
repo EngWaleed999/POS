@@ -1,0 +1,189 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL Database Server
+  # Handles persistence for Keycloak and all POS microservice databases.
+  # Databases initialized via ./init-databases.sql on first startup.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: pos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: walid-999
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pos_postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    networks:
+      - pos-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # 2. Keycloak Identity Provider (OAuth 2.0 / OpenID Connect)
+  # Manages cashier & staff authentication, roles (RBAC), and JWT issuance.
+  # Configured in development mode (start-dev).
+  # ---------------------------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.2
+    container_name: pos-keycloak
+    command: start-dev
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: walid-999
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KC_HTTP_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------------------------------
+  # 3. Redis In-Memory Store
+  # Used for high-speed POS product caching, active shift state, and distributed caching.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:latest
+    container_name: pos-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - pos_redis_data:/data
+    networks:
+      - pos-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # 4. RabbitMQ Message Broker
+  # Handles asynchronous Integration Events and MassTransit messaging across microservices.
+  # Web Management UI available on port 15672.
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:4.3.5-management-alpine
+    container_name: pos-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"   # AMQP protocol for .NET MassTransit
+      - "15672:15672" # Management Dashboard UI
+    volumes:
+      - pos_rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - pos-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # 5. LocalStack (AWS S3 Cloud Emulator)
+  # Emulates AWS S3 for storing product images, logos, invoices, and exported PDF reports.
+  # ---------------------------------------------------------------------------
+  localstack:
+    image: localstack/localstack:stable
+    container_name: pos-localstack
+    restart: unless-stopped
+    environment:
+      - SERVICES=s3
+      - AWS_DEFAULT_REGION=us-east-1
+    ports:
+      - "4566:4566" # LocalStack Gateway
+    volumes:
+      - pos_localstack_data:/var/lib/localstack
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------------------------------
+  # 6. Jaeger (Distributed Tracing Backend & Web UI)
+  # Receives OpenTelemetry OTLP traces across POS microservices for debugging checkout latency.
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    container_name: pos-jaeger
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Jaeger Web UI
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------------------------------
+  # 7. Prometheus (Metrics Server)
+  # Scrapes and stores metrics from ASP.NET Core apps and infrastructure.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: pos-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090" # Prometheus Web UI
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - pos_prometheus_data:/prometheus
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------------------------------
+  # 8. Adminer (Database Management Web UI)
+  # Lightweight web-based database management interface for PostgreSQL.
+  # ---------------------------------------------------------------------------
+  adminer:
+    image: adminer:latest
+    container_name: pos-adminer
+    restart: unless-stopped
+    ports:
+      - "8888:8080" # Maps local port 8888 to Adminer's internal port 8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pos-net
+
+# =============================================================================
+# Persistent Volumes Definition
+# =============================================================================
+volumes:
+  pos_postgres_data:
+    name: pos_postgres_data
+  pos_redis_data:
+    name: pos_redis_data
+  pos_rabbitmq_data:
+    name: pos_rabbitmq_data
+  pos_localstack_data:
+    name: pos_localstack_data
+  pos_prometheus_data:
+    name: pos_prometheus_data
+
+# =============================================================================
+# Network Definition
+# =============================================================================
+networks:
+  pos-net:
+    name: pos_network
+    driver: bridge
