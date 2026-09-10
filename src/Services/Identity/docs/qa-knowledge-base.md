@@ -16,6 +16,7 @@
 8. [لماذا نستخدم DDD في خدمة الـ Identity لنظام الـ POS؟ وهل يعتبر Over-Engineering؟](#8-لماذا-نستخدم-ddd-في-خدمة-الـ-identity-لنظام-الـ-pos-وهل-يعتبر-over-engineering)
 9. [لماذا نستخدم نمط Result<T> و Error بدلاً من رمي الـ Exceptions في معالجة أخطاء البزنس؟ وما هي المشاكل العميقة للـ Exceptions كـ Flow Control؟](#9-لماذا-نستخدم-نمط-resultt-و-error-بدلا-من-رمي-الـ-exceptions-في-معالجة-أخطاء-البزنس-وما-هي-المشاكل-العميقة-للـ-exceptions-كـ-flow-control)
 10. [كيف نصمم نظام الصلاحيات المتقدم (Hybrid RBAC / Fine-Grained Permissions: resource:action:scope) ولماذا نفصل بين أدوار Keycloak وأذونات التطبيق؟](#10-كيف-نصمم-نظام-الصلاحيات-المتقدم-hybrid-rbac--fine-grained-permissions-resourceactionscope-ولماذا-نفصل-بين-أدوار-keycloak-وأذونات-التطبيق)
+11. [ما هي معمارية الكيانات المشتركة (Shared Entity Architecture)؟ ولماذا نستخدم Entity<TId> وواجهات القدرات بدلاً من الـ God Base Class؟ وهل سنستخدم DDD في كامل المشروع؟](#11-ما-هي-معمارية-الكيانات-المشتركة-shared-entity-architecture-ولماذا-نستخدم-entitytid-وواجهات-القدرات-بدلا-من-الـ-god-base-class-وهل-سنستخدم-ddd-في-كامل-المشروع)
 
 ---
 
@@ -489,4 +490,66 @@ public static IResult ToProblemDetails(this Result result)
    `[HasPermission("sales:checkout:terminal")]`
 3. يقوم الـ Handler بفحص الصلاحيات من كاش الذاكرة الداخلي (In-Memory Dictionary أو Redis) المحمل مسبقاً لمجموعة أدوار الكاشير.
 4. العملية لا تتطلب أي استعلام لقاعدة البيانات ولا أي اتصال شبكي بخادم Keycloak، وتتم في أجزاء من الميكروثانية!
+
+---
+
+## 11. ما هي معمارية الكيانات المشتركة (Shared Entity Architecture)؟ ولماذا نستخدم `Entity<TId>` وواجهات القدرات بدلاً من الـ God Base Class؟ وهل سنستخدم DDD في كامل المشروع؟
+
+### ❓ السؤال:
+> *"ما الفائدة الهندسية من جعل الكلاس الأساسي Generic مثل `Entity<TId>`؟ وما معنى تقسيم الحقول المشتركة إلى واجهات قدرات (Capability Interfaces) بدلاً من كلاس أبوي واحد ضخم؟ وهل سنطبق نمط الـ DDD على كافة جداول وخدمات المنصة؟"*
+
+### 💡 الإجابة المعمارية المفصلة:
+
+---
+
+#### أولاً: ما هو `Entity<TId>` وما المشكلة التي يحلها؟ (سر الـ Equality):
+1. **Generic Class:** كلمة `<TId>` تعني نوع معرّف الكيان (`Guid`, `int`, `string`). 95% من الكيانات تستخدم `Guid`، ولكن وجود الـ Generic يسمح بالمرونة التامة (مثل جداول الدول أو العملات).
+2. **حل معضلة مقارنة الكائنات في C# (Reference vs Structural Equality):**
+   * في لغة C# الافتراضية، مقارنة كائنين منفصلين بالذاكرة بـ `==` تعيد `false` حتى لو كانا يحملان نفس الـ `Id`، لأن C# تقارن عنوان الذاكرة (Memory Reference).
+   * في قواعد البيانات وبزنس الـ POS، الموظف أو الفرع هو نفس الكيان الحقيقي إذا كان يحمل نفس الـ `Id`.
+   * كلاس `Entity<TId>` يقوم بإعادة كتابة `Equals`, `GetHashCode`, ومعاملي `==` و `!=` **مرة واحدة فقط مركزياً في `BuildingBlocks`**، فتصبح مقارنة أي كيانين تتم بالهوية مباشرة دون تكرار أي كود.
+
+---
+
+#### ثانياً: لماذا نرفض الـ God Base Class ونعتمد واجهات القدرات؟ (تطبيق مبادئ SOLID):
+
+* **الكارثة في الـ God Base Class ❌:**
+  تخيل كلاس أبوي متضخم:
+  ```csharp
+  public abstract class BaseEntity { Guid Id, DateTime CreatedAt, DateTime? UpdatedAt, bool IsDeleted, bool IsActive ... }
+  ```
+  * لو ورث منه جدول حركة المخزون (`StockMovement`) أو جدول سندات الدفع (`Payments`):
+  * هذه الجداول هي سجلات محاسبية قانونية ثابتة (Immutable Ledger). **ممنوع تعديلها وممنوع حذفها مطلقاً!**
+  * إجبارها على وراثة حقول `UpdatedAt` و `IsDeleted` يلوث قاعدة البيانات بأعمدة فارغة لا لزوم لها (انتهاك مبدأ **ISP** في SOLID)، والأخطر أنه يفتح ثغرة لأي مبرمج جديد لكتابة `movement.IsDeleted = true` فيدمر التدقيق المالي!
+
+* **الحل النظيف عبر واجهات القدرات (Traits / Capability Interfaces) ✅:**
+  نقسم المسؤوليات إلى عقود واضحة وصغيرة:
+  1. `IAuditableEntity`: لمن يحتاج تتبع تاريخ الإنشاء والتعديل (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`).
+  2. `ISoftDeletable`: لمن يحتاج الحذف المنطقي (`IsDeleted`, `DeletedAt`, `DeletedBy`).
+  3. `IActivatable`: لمن يحتاج التفعيل والتعطيل التشغيلي (`IsActive`).
+  
+* **النتيجة المعمارية:**
+  * كلاس `User` و `Branch`: يطبقان `Entity<Guid>, IAuditableEntity, ISoftDeletable, IActivatable` (لأنها تدعم الحذف والتعديل).
+  * كلاس `StockMovement`: يطبق فقط `Entity<Guid>, IAuditableEntity` (مسجل زمني ثابت محمي من الحذف والتعديل).
+  * **الأتمتة التلقائية:** نربط هذه الواجهات بـ `AuditSaveChangesInterceptor` في EF Core لملء التواريخ وحماية الحذف المنطقي وتطبيق الـ Global Query Filters تلقائياً دون كتابة سطر كود واحد في الـ Handlers!
+
+---
+
+#### ثالثاً: هل سنستخدم DDD في كامل المشروع؟ (Pragmatic DDD vs Dogmatic DDD):
+
+**الجواب الحاسم: نعم، ولكن نطبق Pragmatic DDD (الواقعي العملي) ونرفض التعقيد المفرط (Dogmatic DDD).**
+
+1. **أين نستخدم DDD الكامل مع Aggregate Roots و Invariants؟ (Core Domains):**
+   * **خدمة المبيعات والورديات (`Sales` Context):**
+     * الوردية (`Shift`): كائن Aggregate Root معقد يملك دورة حياة حاسمة (`Open -> Suspended -> Closed -> Reconciled`) لحماية توازن الصندوق النقدي ومنع التلاعب.
+     * الفاتورة (`Order` / `Receipt`): لحساب الضرائب والخصومات وبنود الأصناف ذرياً.
+   * **خدمة المخزون (`Inventory` Context):**
+     * لمنع الخصم السالب، وإلزام تسجيل حركات المخزون مع كل تعديل كمية.
+   * **خدمة الهوية (`Identity` Context):**
+     * لحماية ربط أجهزة الكاشير بالفروع، وتشفير الـ PINs، ودورة حياة الموظف.
+2. **أين نبسط الكود ونتجنب تعقيدات DDD؟ (Generic / Supporting Domains):**
+   * العمليات الاستعلامية البسيطة (CRUD / Lookups) مثل استعراض قائمة التصنيفات (`Categories`)، أو قائمة المدن والعملات، لا تحتاج Aggregate Roots ولا Domain Events، بل تعامل كاستعلامات سريعة وخفيفة (CQRS Read Queries).
+3. **القاعدة الذهبية:**
+   > **"استخدم DDD لحماية أموال وبزنس المنصة حيث توجد قواعد معقدة، وتجنبه في العمليات البسيطة لتحافظ على بساطة الكود ومقروئيته لأي مهندس."**
+
 

@@ -93,3 +93,27 @@
   * اعتماد **Domain-Driven Design (DDD)** مع **Private Setters** وطرق تعديل صريحة (مثل `TransferToBranch`, `Deactivate`, `BindToTerminal`) لحماية صحة قواعد البزنس.
 * **النتائج والآثار (Consequences):**
   * منع الحالات غير الصالحة في الذاكرة ومنع التلاعب بالبيانات الحساسة للموظفين والفروع.
+
+---
+
+## 🏛️ ADR-ID-008: معمارية الكيانات القائمة على واجهات القدرات (Capability-Based Entity Architecture) وتطبيق Pragmatic DDD
+
+* **الحالة (Status):** مُعتمد (Approved).
+* **السياق (Context):**
+  * في أنظمة الـ POS، تتشارك العديد من الجداول حقولاً هامة مثل التتبع الزمني (`created_at`, `updated_at`)، والحذف المنطقي (`is_deleted`, `deleted_at`)، وحالة التفعيل (`is_active`).
+  * تجميع كل هذه الحقول في كلاس أبوي واحد ضخم (`God BaseEntity`) يفرض حقولاً لا لزوم لها على جداول تاريخية غير قابلة للتعديل أو الحذف (مثل `stock_movements` وسجلات العمليات المالية) مما ينتهك مبدأ **Interface Segregation Principle (ISP)**.
+  * يبرز التساؤل أيضاً حول كيفية تطبيق DDD: هل نطبقه بشكل حرفي مفرط (Dogmatic) على كل جدول، أم نعتمد DDD عملي (Pragmatic DDD) يركز على حماية القواعد الحساسة؟
+* **الخيارات المتاحة (Options):**
+  1. *Option A:* إنشاء `BaseEntity` ضخم يرث منه كل كائن في النظام.
+  2. *Option B:* فصل القدرات إلى واجهات برمجية مستقلة ودقيقة (`IAuditableEntity`, `ISoftDeletable`, `IActivatable`) مع كلاس أساسي generic للمقارنة `Entity<TId>`، وتطبيق Pragmatic DDD على الـ Core Bounded Contexts فقط.
+* **القرار (Decision):**
+  * اعتماد **Option B**:
+    1. وضع الكلاس الأساسي `Entity<TId>` في `BuildingBlocks` لتوحيد المقارنة بالهوية (`Id.Equals`).
+    2. صياغة عقود مستقلة (`IAuditableEntity`, `ISoftDeletable`, `IActivatable`) يطبق كل كيان ما يحتاجه منها فقط.
+    3. أتمتة ملء التواريخ وحماية الحذف المنطقي عبر `AuditSaveChangesInterceptor` في EF Core دون أي كود يدوي في الـ Handlers.
+    4. تطبيق **Pragmatic DDD**: استخدام الـ Rich Domain Models و Aggregate Roots في السياقات ذات القواعد المالية والتشغيلية المعقدة (المبيعات، الورديات، الفروع، المخزون)، واستخدام CRUD خفيف واستعلامات مباشرة (CQRS) للجداول المرجعية البسيطة.
+* **النتائج والآثار (Consequences):**
+  * **إيجابي:** كود نظيف، عالي المقروئية، يلتزم بمبادئ Clean Code و SOLID.
+  * **إيجابي:** منع الـ Side-effects والأخطاء المحاسبية الناتجة عن محاولة حذف حركات المخزون أو الفواتير.
+  * **إيجابي:** سهولة التوسعة مستقبلاً (مثل إضافة `ITenantAware` لدعم Multi-Tenancy) دون لمس الكود القديم.
+
