@@ -3,6 +3,9 @@ services:
   # 1. PostgreSQL Database Server
   # Handles persistence for Keycloak and all POS microservice databases.
   # Databases initialized via ./init-databases.sql on first startup.
+  #---------------------------------------------------------------------------
+  # 1 - docker compose -f deploy/docker/docker-compose.yml up -d
+  # 2 - docker compose -f deploy/docker/docker-compose.yml down -v
   # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
@@ -86,7 +89,7 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     ports:
-      - "5672:5672"   # AMQP protocol for .NET MassTransit
+      - "5672:5672" # AMQP protocol for .NET MassTransit
       - "15672:15672" # Management Dashboard UI
     volumes:
       - pos_rabbitmq_data:/var/lib/rabbitmq
@@ -128,8 +131,8 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686" # Jaeger Web UI
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
     networks:
       - pos-net
 
