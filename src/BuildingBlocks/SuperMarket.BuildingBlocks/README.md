@@ -1,0 +1,217 @@
+# 🧱 مكتبة النواة المشتركة (SuperMarket.BuildingBlocks)
+
+> **المسؤولية المعمارية:** تمثل هذه المكتبة حجر الأساس (Foundational Building Block) المشترك لجميع الخدمات المصغرة (Microservices) في منظومة نقاط البيع (POS). تحتوي على المفاهيم المعمارية المجردة لقواعد الـ Domain-Driven Design (DDD) ونمط النتائج الصريحة (Result Pattern) لمعالجة أخطاء البزنس بأعلى أداء وموثوقية، دون أي اعتماد على أطر عمل خارجية للبنية التحتية (Zero External Infrastructure Dependencies).
+
+---
+
+## 📑 فهرس المكونات (Architecture Index)
+
+1. [مفاهيم الـ Domain المعتمدة (DDD Primitives)](#1-مفاهيم-الـ-domain-المعتمدة-ddd-primitives)
+2. [نمط النتائج ومعالجة الأخطاء (Result & Error Pattern)](#2-نمط-النتائج-ومعالجة-الأخطاء-result--error-pattern)
+3. [التشريح البرمجي والتفصيلي للكود (Deep-Dive Technical Breakdown)](#3-التشريح-البرمجي-والتفصيلي-للكود-deep-dive-technical-breakdown)
+4. [البرمجة الوظيفية وسلسلة العمليات (Railway-Oriented Programming: Match, Ensure, Map, Bind)](#4-البرمجة-الوظيفية-وسلسلة-العمليات-railway-oriented-programming)
+5. [المقارنة المعمارية وهل هذا التصميم Over-Engineering؟](#5-المقارنة-المعمارية-وهل-هذا-التصميم-over-engineering)
+6. [المعايير القياسية والتوثيق الرسمي لشركة Microsoft](#6-المعايير-القياسية-والتوثيق-الرسمي-لشركة-microsoft)
+
+---
+
+## 1. مفاهيم الـ Domain المعتمدة (DDD Primitives)
+
+| المكون | نوع الكيان | المسؤولية المعمارية |
+| :--- | :--- | :--- |
+| `Entity<TId>` | `abstract class` | كيان يمتلك هوية فريدة (`Id`) تميزه عبر الزمن، وتتحقق المساواة فيه بالهوية وليس بالبيانات الحقلية (`IEquatable`). |
+| `AggregateRoot<TId>` | `abstract class` | جذر التجميع المسؤول عن حماية شروط وقواعد العمل (Invariants)، ويحتوي على سجل آمن للأحداث الداخلية (`IDomainEvent`). |
+| `ValueObject` | `abstract class` | كائن عديم الهوية، تعتمد مساواته كلياً على القيم المحتواة بداخله (Structural Equality). |
+| `DomainEvent` | `abstract record` | حدث يمثل تغييراً في حالة النظام وقع في الماضي داخل نطاق البزنس ومسجل بتوقيت UTC غير قابل للتلاعب. |
+
+---
+
+## 2. نمط النتائج ومعالجة الأخطاء (Result & Error Pattern)
+
+### الفلسفة الأساسية:
+في معمارية الأنظمة المؤسسية (Enterprise POS):
+* **الاستثناءات (Exceptions) تُحجز فقط للكوارث غير المتوقعة:** مثل انقطاع الاتصال بقاعدة البيانات، انهيار الشبكة، أو نفاد الذاكرة (`OutOfMemoryException`). هذه الأخطاء تُترك لتصل إلى `IExceptionHandler` المركزي لترد بـ `500 Internal Server Error`.
+* **أخطاء البزنس (Domain Failures) متوقعة ومحسوبة:** مثل "الباركود غير موجود"، "الرصيد غير كافٍ"، "الوردية مغلقة بالفعل". هذه ليست كوارث تقنية، بل مسارات عمل بديلة (Alternative Business Flows) يجب التعبير عنها بنوع إرجاع صريح (`Result` أو `Result<T>`).
+
+---
+
+## 3. التشريح البرمجي والتفصيلي للكود (Deep-Dive Technical Breakdown)
+
+### أ. لماذا حددنا أرقام صريحة في الـ Enum (`Failure = 0`, `Validation = 1`, ...)؟
+
+```csharp
+public enum ErrorType
+{
+    Failure = 0,
+    Validation = 1,
+    NotFound = 2,
+    Conflict = 3,
+    Unauthorized = 4,
+    Forbidden = 5
+}
+```
+
+#### لماذا هذا القرار؟
+1. **استقرار التخزين والـ Serialization عبر الشبكة (Binary & Database Stability):**
+   عند تخزين نوع الخطأ في قاعدة البيانات، أو إرساله عبر Redis / RabbitMQ / HTTP Headers، يتم تحويل الـ Enum في كثير من الأحيان إلى قيمته الرقمية (`int`). لو قمنا بإضافة عنصر جديد مثل `Critical` في أول الـ Enum بدون أرقام صريحة، سيحدث ما يُعرف بـ **Silent Index Shift Bug**؛ حيث يصبح `Failure = 1` و `Validation = 2` وتتحول كل البيانات التاريخية المخزنة إلى بيانات فاسدة وخاطئة!
+2. **قاعدة الـ Zero-Initialization في C#:**
+   القيمة الافتراضية لأي struct في .NET هي الصفر (`default(ErrorType) == 0`). تحديد `Failure = 0` يضمن أنه إذا تم إنشاء متغير بالخطأ دون إسناد صريح، فإنه يشير تلقائياً إلى الفشل العام ولا يشير إلى تصنيف غير مقصود.
+3. **توضيح سوء الفهم الشائع:**
+   في كود C# النظيف، لا أحد يكتب رقم `2` أو `5`؛ المبرمج يكتب دوماً `ErrorType.NotFound` بشكل قوي النوعية (Strongly Typed). الأرقام الصريحة وُضعت لحماية النظام من التبدلات الخفية للـ Compiler أثناء الصيانة والتحديثات المستقبلية.
+
+---
+
+### ب. تشريح `sealed record Error`:
+
+```csharp
+public sealed record Error
+{
+    public static readonly Error None = new(string.Empty, string.Empty, ErrorType.Failure);
+    public static readonly Error NullValue = new("General.NullValue", "The specified result value is null.", ErrorType.Failure);
+
+    public string Code { get; }
+    public string Description { get; }
+    public ErrorType Type { get; }
+
+    private Error(string code, string description, ErrorType type)
+    {
+        Code = code;
+        Description = description;
+        Type = type;
+    }
+
+    public static Error Failure(string code, string description) =>
+        new(code, description, ErrorType.Failure);
+}
+```
+
+1. **لماذا `sealed`؟**
+   * تمنع أي كود آخر من الوراثة من الكلاس (`class CustomError : Error`).
+   * **الأمان وحماية الـ Invariants:** كائن الخطأ هو مجرد ناقل بيانات (Data Carrier)، ولا نرغب في أن يضيف أحد وراثة تغير قواعد المقارنة أو تضيف دوالاً تخل بمبدأ المسؤولية الواحدة.
+   * **أداء الـ JIT Compiler (Devirtualization):** عندما يعلم المترجم أن الكلاس `sealed`، يقوم بتحسين استدعاء الدوال وتجاوز جدول الـ Virtual Method Table، مما يرفع سرعة التنفيذ.
+2. **هل `Error` كلمة محجوزة في C#؟**
+   * **لا.** `Error` ليست كلمة محجوزة في لغة C# إطلاقاً (عكس كلمات مثل `class`, `record`, `switch`, `return`). هي مجرد اسم كلاس عادي ومعبّر للغاية.
+3. **ما معنى `public static readonly Error None`؟**
+   * الصيغة العامة لتعريف أي متغير أو حقل في C# هي: `[مستوى الوصول] [نوع البيانات] [اسم المتغير] = [القيمة]`.
+   * كلمة `Error` قبل كلمة `None` تمثل **نوع البيانات (Data Type)**، تماماً كما تكتب `int count` أو `string name`.
+   * `static readonly`: هذا كائن ثابت وفريد في الذاكرة (Singleton Pattern).
+   * **الـ Null Object Pattern:** بدلاً من إرجاع `null` عندما تنجح العملية مما يسبب `NullReferenceException` القاتل، نرجع كائناً صريحاً يمثل "عدم وجود خطأ" وهو `Error.None`.
+4. **ماذا عن `get;` بدون `set;`؟ كيف تسند القيم؟**
+   * هذا هو مبدأ **عدم القابلية للتعديل (Immutability)**.
+   * يتم إسناد الخصائص حصراً داخل **الـ Constructor الخاص (Private Constructor)** عند لحظة الإنشاء.
+   * بعد الإنشاء، يستحيل على أي كود تعديل `error.Code = "..."`. هذا يحقق أعلى درجات الأمان التزامني (Thread Safety) في أنظمة الـ POS متعددة الخيوط.
+5. **لماذا كلمة `new(...)` بدون ذكر اسم الكلاس في `Failure`؟**
+   * هذه ميزة حديثة في C# تسمى **Target-Typed New Expression** (قُدمت في C# 9).
+   * طالما أن نوع الإرجاع للدالة معروف صراحة (`public static Error Failure(...)`)، فإن كتابة `new Error(...)` تُعد تكراراً غير مفيد. كتابة `new(...)` تجعل الكود أنظف وأسهل للقراءة.
+
+---
+
+### ج. تشريح صلب `Result` والـ Invariants:
+
+```csharp
+public class Result
+{
+    protected internal Result(bool isSuccess, Error error)
+    {
+        if (isSuccess && error != Error.None)
+            throw new InvalidOperationException("A successful result cannot be initialized with an error.");
+
+        if (!isSuccess && error == Error.None)
+            throw new InvalidOperationException("A failure result must be initialized with a non-empty error.");
+
+        IsSuccess = isSuccess;
+        Error = error;
+    }
+
+    public bool IsSuccess { get; }
+    public bool IsFailure => !IsSuccess;
+    public Error Error { get; }
+}
+```
+
+1. **ماذا تعني `protected internal`؟**
+   * `internal`: الكونسلتراكتور مرئي فقط داخل نفس المشروع (`SuperMarket.BuildingBlocks`). لا يمكن لأي كود خارجي (مثل الـ Controllers أو الخدمات) استدعاؤه بـ `new Result(...)`.
+   * `protected`: يسمح للكلاسات الوارثة (مثل `Result<TValue>`) بالوصول إليه واستدعاء `base(isSuccess, error)`.
+   * هذا يفرض على جميع المطورين إنشاء النتائج حصراً عبر الـ Factory Methods الآمنة (`Result.Success()`, `Result.Failure(...)`).
+2. **لماذا الشروط القاسية في الـ Constructor (Invariants)؟**
+   * يطبق هذا الكود مبدأ معماري شهير يُعرف بـ **Making Invalid States Unrepresentable**.
+   * **الشرط الأول:** هل يعقل أن تكون العملية ناجحة (`isSuccess == true`) ولكن معها كود خطأ `NotFound`؟ هذا تناقض منطقي مفسد للبيانات!
+   * **الشرط الثاني:** هل يعقل أن تفشل العملية (`isSuccess == false`) ولكن الخطأ فارغ `Error.None`؟ كيف سيعرف المستخدم أو الـ Frontend سبب الفشل؟
+   * وجود هذه الـ Guards يضمن استحالة خروج كائن `Result` مشوه أو متناقض إلى النظام.
+3. **من أين أتت `IsSuccess`؟**
+   * هي الخاصية المكتوبة أسفل الكونستركتور مباشرة: `public bool IsSuccess { get; }`.
+
+---
+
+## 4. البرمجة الوظيفية وسلسلة العمليات (Railway-Oriented Programming)
+
+ملف `ResultExtensions.cs` يطبق نمطاً معمارياً ثورياً مقتبساً من البرمجة الوظيفية يُسمى **مسار السكة الحديدية (Railway-Oriented Programming - ROP)**:
+
+```
+                  ┌──────────────┐      ┌──────────────┐
+  المدخلات ───►───│ الخطوة الأولى│───►──│ الخطوة الثانية│───►─── نتيجة ناجحة (Green Track)
+                  └──────┬───────┘      └──────┬───────┘
+                         │ فشل                 │ فشل
+                         ▼                     ▼
+                  ═════════════════════════════════════════════► نتيجة فاشلة (Red Track)
+```
+
+### أ. فك رموز الدالة `Match`:
+
+```csharp
+public static TOutput Match<TOutput>(
+    this Result result,
+    Func<TOutput> onSuccess,
+    Func<Error, TOutput> onFailure)
+{
+    ArgumentNullException.ThrowIfNull(onSuccess);
+    ArgumentNullException.ThrowIfNull(onFailure);
+
+    return result.IsSuccess ? onSuccess() : onFailure(result.Error);
+}
+```
+
+* **`this Result result`:** Extension Method في C#، تجعل الدالة تبدو وكأنها عضو داخلي في كائن الـ `result`.
+* **`Func<TOutput> onSuccess`:** مؤشر لدالة (Delegate) لا تأخذ أي معاملات وتُرجع نوع `TOutput`. يتم تنفيذها فقط عند النجاح.
+* **`Func<Error, TOutput> onFailure`:** مؤشر لدالة تأخذ الخطأ `Error` كمدخل وتُرجع `TOutput`. يتم تنفيذها فقط عند الفشل.
+* **الفائدة المعمارية للـ `Match`:** تجبر المطور في طبقة الـ API Controller على كتابة سيناريو النجاح وسيناريو الفشل معاً، وتمنعه تماماً من نسيان معالجة الخطأ:
+
+```csharp
+// مثال تطبيقي في Minimal API أو Controller:
+return result.Match(
+    onSuccess: () => Results.Ok(new { message = "تم إغلاق الوردية بنجاح" }),
+    onFailure: error => Results.BadRequest(error)
+);
+```
+
+### ب. دوال `Ensure`, `Map`, `Bind`:
+* **`Ensure` (التحقق الشرطي):** تتحقق من شرط منطقي إضافي على القيمة داخل الـ `Result`؛ إذا تحقق الشرط يستمر بنجاح، وإذا خالفه يتحول فوراً إلى فشل بالخطأ المحدد.
+* **`Map` (التحويل):** تحول نوع البيانات داخل النتيجة الناجحة من شكل إلى آخر (مثلاً من Entity إلى DTO) دون الحاجة لفحص `if (result.IsSuccess)`.
+* **`Bind` (الربط التسلسلي):** تربط عملية بعملية أخرى تُرجع هي أيضاً `Result`، فإذا فشلت الأولى تتوقف السلسلة فوراً وتتجاوز الثانية (Short-Circuiting).
+
+---
+
+## 5. المقارنة المعمارية وهل هذا التصميم Over-Engineering؟
+
+| وجه المقارنة | رمي الاستثناءات (Throw Exceptions) | نمط النتائج (Result Pattern) |
+| :--- | :--- | :--- |
+| **طبيعة المعالجة** | خفية وغير واضحة في الـ Method Signature (GOTO خفي). | صريحة في الـ Type System (`Result<T>` تُعلن عن كل شيء). |
+| **استهلاك الذاكرة والمعالج** | مكلف جداً (توليد Stack Trace وحجز كائنات ضخمة في الرام). | فائق السرعة وخفيف (مجرد struct/record خفيف في الرام). |
+| **تجربة المطور (DX)** | المطور ينسى كتابة `try-catch` فينهار السيرفر. | المطور مجبور عبر الـ Compiler على معالجة النجاح والفشل. |
+| **توافقية الـ HTTP APIs** | تحتاج Middleware معقد لترجمة كل نوع Exception. | تتحول بأسطر بسيطة إلى معيار ProblemDetails (RFC 7807). |
+
+> **الحكم المعماري (Architectural Verdict):**
+> ليس Over-Engineering إطلاقاً في نظام نقاط بيع وسوبرماركت مركزي يعالج آلاف عمليات مسح الباركود وفتح الورديات في الثانية الواحدة. بل هو المعيار الصناعي المعتمد عالمياً لمنع تسرب الأخطاء وحماية أداء السيرفرات من الانهيار تحت الضغط.
+
+---
+
+## 6. المعايير القياسية والتوثيق الرسمي لشركة Microsoft
+
+1. **دليل معمارية المايكروسيرفس الرسمي من Microsoft (.NET Microservices Architecture eBook):**
+   * الفصل: *"Design domain errors and result patterns"*
+   * الرابط الرسمي: [Microsoft Architecture: Microservice Domain Events & Error Handling](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/domain-events-design-implementation)
+2. **معيار معالجة الأخطاء في ASP.NET Core وإخراج RFC 7807 Problem Details:**
+   * الرابط الرسمي: [Microsoft Learn: Handle errors in ASP.NET Core APIs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling)
+3. **توجيهات تصميم مكتبات .NET الرسمية (Framework Design Guidelines - Exceptions vs Return Values):**
+   * تنص الوثيقة صراحة على: *"Do not use exceptions for normal flow of control. Use the Tester-Doer Pattern or Try Pattern / Result Object"*.
+   * الرابط الرسمي: [Microsoft Learn: Exceptions and Performance](https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/exceptions-and-performance)
