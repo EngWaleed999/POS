@@ -33,8 +33,8 @@ flowchart LR
 * [x] **`IDomainEvent` / `DomainEvent`:** عقد وسجل غير قابل للتعديل (Immutable Record) يحمل (`EventId`, `OccurredOn`).
 
 #### Task 0.2: نمط النتائج الصريحة ومعالجة الأخطاء (Result & Error Pattern)
-* [ ] **`Error`:** كائن قيمة يحدد كود الخطأ، وصفه، وتصنيفه (`ErrorType`: `Failure`, `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`).
-* [ ] **`Result` & `Result<T>`:** كلاس النتيجة الصريح الذي يحمل (`IsSuccess`, `IsFailure`, `Error`, `Value`) لمنع استخدام Exceptions للتحكم بالمسار (No Exceptions for Flow Control).
+* [x] **`Error`:** كائن قيمة يحدد كود الخطأ، وصفه، وتصنيفه (`ErrorType`: `Failure`, `Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`).
+* [x] **`Result` & `Result<T>`:** كلاس النتيجة الصريح الذي يحمل (`IsSuccess`, `IsFailure`, `Error`, `Value`) لمنع استخدام Exceptions للتحكم بالمسار (No Exceptions for Flow Control).
 
 #### Task 0.3: واجهات القدرات المتخصصة (Capability Interfaces)
 * [ ] **`IAuditableEntity`:** تضمن حقول التدقيق الزمني (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`).
