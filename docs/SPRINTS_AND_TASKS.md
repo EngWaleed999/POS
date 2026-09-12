@@ -37,12 +37,12 @@ flowchart LR
 * [x] **`Result` & `Result<T>`:** كلاس النتيجة الصريح الذي يحمل (`IsSuccess`, `IsFailure`, `Error`, `Value`) لمنع استخدام Exceptions للتحكم بالمسار (No Exceptions for Flow Control).
 
 #### Task 0.3: واجهات القدرات المتخصصة (Capability Interfaces)
-* [ ] **`IAuditableEntity`:** تضمن حقول التدقيق الزمني (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`).
-* [ ] **`ISoftDeletable`:** تضمن حقول الحذف المنطقي (`IsDeleted`, `DeletedAt`, `DeletedBy`).
-* [ ] **`IActivatable`:** تضمن حالة التفعيل والتعطيل التشغيلي (`IsActive`).
+* [x] **`IAuditableEntity`:** تضمن حقول التدقيق الزمني (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`).
+* [x] **`ISoftDeletable`:** تضمن حقول الحذف المنطقي (`IsDeleted`, `DeletedAt`, `DeletedBy`).
+* [x] **`IActivatable`:** تضمن حالة التفعيل والتعطيل التشغيلي (`IsActive`).
 
 #### Task 0.4: أتمتة البنية التحتية في EF Core (Infrastructure Interceptors)
-* [ ] **`AuditSaveChangesInterceptor`:** مراقب ذكي في EF Core يملأ تواريخ الإنشاء والتعديل وهوية الموظف الحالي تلقائياً عند استدعاء `SaveChangesAsync`، ويحول أوامر `DELETE` تلقائياً إلى Soft Delete دون تدخل يدوي في الـ Handlers.
+* [x] **`AuditSaveChangesInterceptor`:** مراقب ذكي في EF Core يملأ تواريخ الإنشاء والتعديل وهوية الموظف الحالي تلقائياً عند استدعاء `SaveChangesAsync`، ويحول أوامر `DELETE` تلقائياً إلى Soft Delete دون تدخل يدوي في الـ Handlers.
 
 ---
 

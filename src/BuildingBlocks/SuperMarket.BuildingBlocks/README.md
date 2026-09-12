@@ -12,6 +12,7 @@
 4. [البرمجة الوظيفية وسلسلة العمليات (Railway-Oriented Programming: Match, Ensure, Map, Bind)](#4-البرمجة-الوظيفية-وسلسلة-العمليات-railway-oriented-programming)
 5. [المقارنة المعمارية وهل هذا التصميم Over-Engineering؟](#5-المقارنة-المعمارية-وهل-هذا-التصميم-over-engineering)
 6. [المعايير القياسية والتوثيق الرسمي لشركة Microsoft](#6-المعايير-القياسية-والتوثيق-الرسمي-لشركة-microsoft)
+7. [أتمتة البنية التحتية في EF Core (AuditSaveChangesInterceptor & SoftDeleteFilter)](#7-أتمتة-البنية-التحتية-في-ef-core)
 
 ---
 
@@ -23,6 +24,14 @@
 | `AggregateRoot<TId>` | `abstract class` | جذر التجميع المسؤول عن حماية شروط وقواعد العمل (Invariants)، ويحتوي على سجل آمن للأحداث الداخلية (`IDomainEvent`). |
 | `ValueObject` | `abstract class` | كائن عديم الهوية، تعتمد مساواته كلياً على القيم المحتواة بداخله (Structural Equality). |
 | `DomainEvent` | `abstract record` | حدث يمثل تغييراً في حالة النظام وقع في الماضي داخل نطاق البزنس ومسجل بتوقيت UTC غير قابل للتلاعب. |
+| `IAuditableEntity` | `interface` | تضمن تتبع تاريخ الإنشاء والتعديل (`CreatedAt`, `CreatedBy`, `UpdatedAt`, `UpdatedBy`) بتوقيت UTC. |
+| `ISoftDeletable` | `interface` | تضمن الحذف المنطقي (`IsDeleted`, `DeletedAt`, `DeletedBy`) للحفاظ على السجلات المالية والتاريخية من الحذف الفعلي. |
+| `IActivatable` | `interface` | تضمن التحكم بالحالة التشغيلية (`IsActive`) كإيقاف وردية أو تعليق فرع دون حذفه. |
+
+### 💡 لماذا واجهات القدرات المتخصصة (Capability Interfaces) بدلاً من `BaseEntity` موحد؟
+1. **تجنب كلاس الإله (God Object Anti-Pattern):** فرض حقول الحذف والتدقيق في كلاس وراثة موحد يجبر كيانات لا تحتاج للحذف (مثل `AuditLog` غير القابل للحذف أو التعديل، أو `BranchOperatingHours`) على حمل حقول زائدة لا معنى لها، مما ينتهك مبدأ فصل الواجهات (Interface Segregation Principle).
+2. **تفضيل التركيب على الوراثة (Composition over Inheritance):** C# لا تدعم الوراثة المتعددة؛ استخدام الواجهات يعطي كل كيان حرية اختيار قدراته بدقة: كيان يحتاج تدقيق فقط، كيان يحتاج تدقيق وحذف منطقي، وآخر لا يحتاج أياً منهما.
+3. **الأتمتة عبر الـ Interceptors:** في طبقة الـ Infrastructure، يفحص `AuditSaveChangesInterceptor` الكيانات عبر هذه الواجهات تلقائياً ويملأ بياناتها دون تدخل يدوي.
 
 ---
 
@@ -215,3 +224,22 @@ return result.Match(
 3. **توجيهات تصميم مكتبات .NET الرسمية (Framework Design Guidelines - Exceptions vs Return Values):**
    * تنص الوثيقة صراحة على: *"Do not use exceptions for normal flow of control. Use the Tester-Doer Pattern or Try Pattern / Result Object"*.
    * الرابط الرسمي: [Microsoft Learn: Exceptions and Performance](https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/exceptions-and-performance)
+
+---
+
+## 7. أتمتة البنية التحتية في EF Core
+
+### أ. مراقب الحفظ التلقائي (`AuditSaveChangesInterceptor`):
+يقوم الـ Interceptor باعتراض كل عمليات `SaveChanges` و `SaveChangesAsync` في EF Core وتطبيق القواعد التالية آلياً:
+1. **أتمتة التتبع الزمني (`IAuditableEntity`):**
+   * عند إضافة سجل جديد (`Added`): يملأ `CreatedAt` بتوقيت UTC الحالي ويملأ `CreatedBy` بمعرف المستخدم الحالي من Keycloak (أو `"SYSTEM"` للعمليات الخلفية).
+   * عند تعديل سجل قائم (`Modified`): يملأ `UpdatedAt` و `UpdatedBy`، **ويعطل تعديل `CreatedAt` و `CreatedBy` برمجياً لمنع التلاعب بالسجلات التاريخية**.
+2. **أتمتة الحذف المنطقي (`ISoftDeletable`):**
+   * عند إرسال أمر حذف (`Deleted`): يلغي أمر الـ SQL DELETE ويحوله إلى `Modified`، ويضع `IsDeleted = true` مع توثيق وقت ومعرف من قام بالحذف.
+
+### ب. فلترة الاستعلامات العامة (`ModelBuilderExtensions.ApplySoftDeleteQueryFilter`):
+تتيح دالة التوسعة `ApplySoftDeleteQueryFilter()` ضبط فلتر استعلام عام (Global Query Filter) تلقائياً لكل الجداول التي تطبق `ISoftDeletable`، مما يستبعد السجلات المحذوفة منطقياً من جميع استعلامات الـ `SELECT` دون الحاجة لكتابة `WHERE is_deleted = false` في كل استعلام.
+وعند رغبة الإدارة في فحص السجلات المحذوفة، يتم تجاوز الفلتر ببساطة عبر:
+```csharp
+var allBranches = await context.Branches.IgnoreQueryFilters().ToListAsync();
+```
