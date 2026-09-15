@@ -44,6 +44,23 @@ flowchart LR
 #### Task 0.4: أتمتة البنية التحتية في EF Core (Infrastructure Interceptors)
 * [x] **`AuditSaveChangesInterceptor`:** مراقب ذكي في EF Core يملأ تواريخ الإنشاء والتعديل وهوية الموظف الحالي تلقائياً عند استدعاء `SaveChangesAsync`، ويحول أوامر `DELETE` تلقائياً إلى Soft Delete دون تدخل يدوي في الـ Handlers.
 
+#### Task 0.5: البنية التحتية للـ CQRS وسلوكيات الـ Pipeline وأحداث الدومين (CQRS & Pipelines)
+* [x] **`ICommand` & `IQuery`:** واجهات CQRS صريحة تجبر العمليات على إرجاع نمط النتائج (`Result` و `Result<T>`).
+* [x] **`ValidationPipelineBehavior`:** اعتراض وفحص الطلبات تلقائياً عبر FluentValidation بشكل متوازٍ والإيقاف الفوري (Short-Circuit) عند وجود أخطاء.
+* [x] **`LoggingPipelineBehavior`:** تسجيل أحداث مسار الطلب (Lifecycle Tracing) والتمييز الذكي بين تحذيرات البزنس وانهيارات الـ Exceptions.
+* [x] **`PerformancePipelineBehavior`:** قياس زمن الاستجابة، تسجيل مقاييس OpenTelemetry (`Meter`, `Counter`, `Histogram`)، ومراقبة عتبة السرعة SLA.
+* [x] **`PerformanceSettings`:** تطبيق نمط الخيارات (Options Pattern `IOptions<T>`) لضبط عتبة البطء ديناميكياً من `appsettings.json` مع قيمة افتراضية آمنة (500ms).
+* [x] **`DispatchDomainEventsInterceptor`:** مراقب EF Core يستخرج أحداث الدومين من `IAggregateRoot` ويمسحها وينشرها تلقائياً عبر MediatR `IPublisher` عند كل `SaveChangesAsync`.
+
+#### Task 0.6: معالجة الأخطاء المركزية ومعيار ProblemDetails (Web & Error Infrastructure)
+* [x] **`GlobalExceptionHandler`:** معالج استثناءات مركزي يطبق `IExceptionHandler` يلتقط الانهيارات غير المتوقعة، يسجلها في Serilog، ويعيد رد `500 Internal Server Error` آمن يحتوي على `traceId` بمعيار RFC 7807.
+* [x] **`ResultProblemDetailsExtensions`:** دوال توسعة تحول أخطاء البزنس في نمط `Result` و `Result<T>` تلقائياً إلى استجابات HTTP دلالية موحدة بمعيار RFC 7807 ProblemDetails (`400`, `404`, `409`, `401`, `403`).
+* [x] **`DependencyInjection`:** دوال مساعدة `AddBuildingBlocksWeb` و `UseBuildingBlocksWeb` لتهيئة البنية التحتية للويب بسطر واحد في كل ميكروسيرفيس.
+
+#### Task 0.7: استراتيجية الترقيم المزدوجة (Pagination Infrastructure)
+* [x] **`PaginationParams` & `PagedList<T>`:** الترقيم الكلاسيكي (Offset-Based) للشاشات الإدارية والتقارير مع حساب الإجمالي `TotalCount` و `TotalPages`، ومصنع `CreateAsync` عبر EF Core، وحماية أمنية بسقف `MaxPageSize = 100`.
+* [x] **`CursorParams<TCursor>` & `CursorPagedList<T, TCursor>`:** الترقيم فائق السرعة O(1) المستند للمؤشر (Keyset / Cursor-Based) للجداول المليونية وحركات الكاشير اللحظية مع تجنب استعلام `COUNT(*)` المنهك.
+
 ---
 
 ## 🔐 Sprint 1: خدمة الهوية — طبقة النطاق وقاعدة البيانات (Identity Domain & DB)

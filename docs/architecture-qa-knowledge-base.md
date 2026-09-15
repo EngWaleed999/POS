@@ -838,3 +838,264 @@ return result.Match(
 3. **متى يكون هذا النمط Over-engineering فعلاً؟**
    لو قمنا ببناء نظام وظيفي معقد جداً أو جلبنا مكتبات مثل `LanguageExt` تحتوي على 40 دالة مثل `BiFold`, `Traverse`, `MonadTransformers` واستوردنا مفاهيم رياضية وظيفية معقدة لا يفهمها فريق العمل.
    أما ما بنيناه فهو **Minimal Pragmatic Result Pattern**: يحتوي فقط على `IsSuccess`, `Error`, و `Value`، وأي مبرمج يفهمه ويستخدمه بسهولة تامة من أول نظرة!
+
+---
+
+## ❓ السؤال 12: تشريح بوابة التحقق المركزية (ValidationPipelineBehavior)
+> **"لماذا صممنا كلاس ValidationPipelineBehavior ونحن لم نبنِ أي خدمة بعد؟ وكيف يتحقق من الطلبات، وما هي المقايضات الهندسية بداخله؟"**
+
+### 1. القصة الهندسية: بوابات التفتيش الأمني في المطار الدولي
+تخيل أننا في مرحلة **بناء مطار دولي جديد**. أرض المطار ما زالت خالية، ولم تصل أي طائرة بعد، ولم يأتِ أي مسافر. 
+لكن قبل أن نفتح المطار، قمنا بتركيب **بوابات التفتيش الأمني وجهاز الأشعة السينية (X-Ray Scanner)** عند مدخل الصالة.
+
+هذه البوابات مبرمجة على قانون واحد صارم:
+> **"أي مسافر يدخل ومعه حقيبة، تُمرر الحقيبة على جهاز الفحص. إذا وُجد بها ممنوعات، يُمنع من الدخول فوراً ويُعاد من حيث أتى دون أن يدخل صالة المغادرة ودون أن يركب الطائرة."**
+
+هذا هو بالضبط **`ValidationPipelineBehavior`**:
+* نحن لم نبنِ خدمات مثل `Identity` أو `Sales` بعد.
+* لكن عندما نبدأ غداً ببناء خدمة `Identity`، سننشئ أمراً اسمه:
+  `RegisterUserCommand(string Username, string Password, string Role)`
+* ونكتب بجانبه ملف شروط باستخدام مكتبة `FluentValidation` اسمه `RegisterUserCommandValidator`:
+  - اسم المستخدم لا يقل عن 3 أحرف.
+  - كلمة المرور لا تقل عن 8 خانات.
+
+**ماذا يحدث في الإنتاج بفضل هذا الكلاس؟**
+بمجرد أن يرسل الـ Controller الطلب إلى MediatR، تلتقطه "بوابة التفتيش" **تلقائياً**:
+1. إذا كانت البيانات سليمة: تفتح له الباب ليدخل إلى الـ Handler ويكتب في قاعدة البيانات.
+2. إذا كان الباسورد 4 خانات فقط: البوابة توقفه فوراً وترجع `Result.Failure` مع كود `General.Validation`، **دون أن يدخل الـ Handler، ودون أن يفتح اتصالاً بقاعدة البيانات أصلاً!**
+3. **المكسب المعماري:** لن تضطر أبداً لكتابة سطر واحد للتحقق اليدوي داخل أي Controller أو Handler تبنيه في أي خدمة مستقبلاً.
+
+### 2. التشريح البرمجي والمقايضات (Technical Breakdown & Trade-Offs):
+* **التنفيذ المتوازي عبر `Task.WhenAll`:**
+  إذا كان للأمر الواحد أكثر من Validator (مثلاً فاحص لهيكل البيانات، وفاحص لقواعد الفرع)، فإن `Task.WhenAll` تشغل جميع الفاحصين في نفس الوقت بدلاً من تشغيلهم تسلسلياً، مما يقلل زمن الاستجابة في أنظمة الـ POS.
+* **الإيقاف الفوري (Short-Circuiting):**
+  إذا كان عدد الأخطاء `failures.Count > 0`، لا يستدعي الكود `next()` إطلاقاً، مما يوفر استهلاك خيوط المعالجة والـ CPU في معالجة طلبات فاسدة.
+* **مصنع النتائج للأنواع العامة (Result Factory via Reflection):**
+  بما أن الـ Pipeline يخدم أي نوع طلب `TRequest` وأي نوع رد `TResponse`، نحتاج لمعرفة هل الرد هو `Result` أم `Result<T>` لإنشاء كائن الفشل المناسب. يتم استخدام Reflection مع MethodInfo لاستدعاء `Result.Failure(error)` بنوع القيمة المناسب بدقة تامة.
+
+---
+
+## ❓ السؤال 13: الفرق المعماري الجوهري: Domain Events vs Integration Events
+> **"ما هو الفرق بين أحداث الدومين وأحداث التكامل؟ وما فائدة DispatchDomainEventsInterceptor ولماذا لا ننشر الأحداث يدوياً؟"**
+
+```mermaid
+flowchart TD
+    subgraph SalesService [خدمة المبيعات - Sales Microservice]
+        Entity[Invoice AggregateRoot] -- "1. يضيف حدثاً داخلياً" --> DomEvt["InvoiceIssuedDomainEvent (Domain Event)"]
+        DomEvt -- "2. يُنشر داخلياً عبر MediatR" --> Interceptor[DispatchDomainEventsInterceptor]
+        Interceptor -- "In-Process (داخل نفس الذاكرة)" --> LocalHandler[SalesStatisticsHandler]
+        Interceptor -- "3. حفظ في جدول" --> OutboxTable[(Outbox Table)]
+    end
+
+    subgraph MessageBroker [ناقل الرسائل - RabbitMQ / Kafka]
+        OutboxMsg["InvoicePaidIntegrationEvent (Integration Event)"]
+    end
+
+    subgraph OtherServices [خدمات أخرى مستقلة]
+        Inventory[خدمة المخازن - Inventory]
+        Finance[خدمة الحسابات - Finance]
+    end
+
+    OutboxTable -- "Background Publisher (Out-of-Process)" --> OutboxMsg
+    OutboxMsg -- "عبر الشبكة (Network)" --> Inventory
+    OutboxMsg -- "عبر الشبكة (Network)" --> Finance
+```
+
+### 1. المقارنة المعمارية الفاصلة:
+* **Domain Event (أحداث النطاق الداخلي):**
+  - **النطاق:** داخل نفس الميكروسيرفيس ونفس العملية والذاكرة (In-Process / Same Process Memory).
+  - **الأداة:** يتم نشره محلياً عبر **MediatR** (`IPublisher.Publish`).
+  - **الهدف:** إخطار أجزاء أخرى داخل نفس الخدمة بما حدث (مثال: عند إصدار الفاتورة، يقوم معالج محلي بحساب مجموع مبيعات الكاشير لليوم).
+  - **المعاملة (Transaction):** يحدث ضمن نفس الـ Unit of Work في قاعدة البيانات.
+* **Integration Event (أحداث التكامل الخارجي):**
+  - **النطاق:** ينتقل **عبر الشبكة بين خدمات مختلفة ومستقلة تماماً (Cross-Microservices / Out-of-Process)**.
+  - **الأداة:** يتم نشره عبر **Message Broker** مثل RabbitMQ أو Kafka أو Azure Service Bus.
+  - **الهدف:** إخبار الخدمات الأخرى بالتغييرات (مثال: خدمة المبيعات تخبر خدمة **المخازن** بخصم 3 علب حليب، وتخبر خدمة **المالية** بإيداع المبلغ).
+  - **المعاملة (Transaction):** غير متزامن (Eventual Consistency) ويستخدم أنماطاً مثل Outbox Pattern لضمان عدم ضياع الرسائل.
+
+### 2. لماذا الاعتماد على `DispatchDomainEventsInterceptor`؟
+1. **منع النسيان البشري:** عدم إجبار المطور على تذكر كتابة `_mediator.Publish` يدوياً في كل Handler.
+2. **نقاء الـ Domain (Pure Domain):** تظل الكيانات خالية من أي حقن لخدمات مثل MediatR، ومسؤوليتها تقتصر على تسجيل ما حدث في `_domainEvents` داخلياً.
+3. **حماية التكرار (Idempotency Protection):** يتم مسح الأحداث `root.ClearDomainEvents()` **قبل** عملية النشر الفعلية لضمان عدم تكرار النشر إذا قام الـ Handler الفرعي باستدعاء `SaveChangesAsync` آخر داخل نفس السلسلة.
+
+---
+
+## ❓ السؤال 14: الرصد وقياس الأداء (Observability) ونمط الـ Options Pattern
+> **"لماذا فصلنا Logging عن Performance؟ وما هو OpenTelemetry؟ ولماذا اعتمدنا نمط Options Pattern مع PerformanceSettings؟"**
+
+### 1. تطبيق مبدأ المسؤولية الواحدة (Single Responsibility Principle - SRP):
+* **`LoggingPipelineBehavior`:** مسؤوليته الوحيدة توثيق **ماذا حدث ومن قام به** (تسجيل بدء الطلب، التحذير من أخطاء البزنس، وتسجيل انهيارات الـ Exceptions).
+* **`PerformancePipelineBehavior`:** مسؤوليته الوحيدة **قياس السرعة والمقاييس الرقمية** (تشغيل ساعة الإيقاف، تسجيل عدادات ومقاييس OpenTelemetry، ومراقبة عتبة السرعة SLA).
+* **المكسب المعماري:** إمكانية اختبار أو تعديل أو تعطيل قياس الأداء دون المساس بسجلات اللوجز النصية.
+
+### 2. ما هو OpenTelemetry ولماذا نحتاجه؟
+في بيئة المايكروسيرفس، عندما يضغط الكاشير على زر إصدار الفاتورة وتستغرق العملية 8 ثوانٍ، يستحيل فتح 4 سيرفرات والبحث بين ملايين الأسطر.
+**OpenTelemetry** يحل هذا بثلاثة أعمدة:
+1. **Traces (التتبع الموزع):** رقم تتبع موحد (`TraceId`) يوضح على رسم بياني أين ضاع الوقت بدقة (Sales 20ms، Inventory 10ms، قاعدة البيانات 7.8s).
+2. **Metrics (المقاييس الرقمية الحية):** مثل عدادات السيارة (`pos_requests_total` و `pos_request_duration_ms`) لتغذية Prometheus و Grafana بلوحات تحكم حية.
+3. **Logs (السجلات المترابطة):** رسائل نصية مربوطة بالـ TraceId.
+
+### 3. لماذا نمط الخيارات (Options Pattern) مع `PerformanceSettings`؟
+بدلاً من تثبيت عتبة البطء كـ `const int SlowRequestThresholdMs = 500`:
+1. **المرونة التشغيلية:** خدمة المبيعات POS تحتاج عتبة سريعة `300ms`، بينما خدمة التقارير تحتاج `2000ms`.
+2. **بدون إعادة بناء (Zero-Rebuild):** يمكن تغيير القيمة في ملف `appsettings.json` في بيئة التشغيل دون تعديل سطر كود واحد.
+3. **البرمجة الدفاعية (Defensive Fallback):**
+   ```csharp
+   _slowRequestThresholdMs = options?.Value.SlowRequestThresholdMs is > 0 
+       ? options.Value.SlowRequestThresholdMs 
+       : 500;
+   ```
+   هذا السطر يضمن أنه حتى لو نسي المطور كتابة القسم في `appsettings.json` أو في الـ Unit Tests، فلن ينهار النظام أبداً وسيستخدم القيمة الافتراضية 500ms بأمان.
+
+---
+
+## ❓ السؤال 15: تشريح المفاهيم: ما هو الـ Middleware؟ وما هو معيار ProblemDetails (RFC 7807)؟
+> **"ما هو تعريف الـ Middleware ولماذا سُمي بذلك؟ وما هو ProblemDetails ولماذا سُمي بهذا الاسم؟ وما المشكلة التي يحلانها والبدائل والمقايضات؟"**
+
+### 1. ما هو الـ Middleware؟ ولماذا سُمي بهذا الاسم؟
+* **التعريف الهندسي:** الـ **Middleware (البرمجيات الوسيطة)** هي مكونات برمجية تُركب في مسار الطلب (Request Pipeline) لتجلس **في المنتصف (in the middle)** بين خادم الويب (Web Server مثل Kestrel/Nginx) وبين كود التطبيق الفعلي (Controllers / Minimal APIs).
+* **نمط التصميم (Design Pattern):** يطبق نمط **سلسلة المسؤولية (Chain of Responsibility) وحلقات البصلة (Russian Dolls)**. كل Middleware يمكنه:
+  1. فحص أو تعديل الطلب قبل تمريره للمكون التالي: `await _next(context)`.
+  2. اتخاذ قرار الإيقاف الفوري (Short-Circuiting) وإرجاع الرد مباشرة دون إكمال المسار (مثل فحص الصلاحيات Authentication أو اعتراض الأخطاء).
+  3. فحص أو تعديل الرد العائد بعد اكتمال التنفيذ.
+* **لماذا سُمي بذلك؟** لأنه يمثل "طبقة وسطى" تفصل اهتمامات البنية التحتية والشبكة (Routing, Logging, Authentication, Error Handling) عن منطق البزنس الخالص.
+
+---
+
+### 2. ما هو معيار `ProblemDetails`؟ ولماذا سُمي بذلك؟
+* **التعريف الهندسي:** هو **معيار دولي للإنترنت (IETF Standard)** موثق رسميًا برقم **RFC 7807** (ثم حُدث في RFC 9457) بعنوان: *"Problem Details for HTTP APIs"*.
+* **لماذا سُمي بهذا الاسم؟** لأنه بدلاً من الاكتفاء برقم حالة الـ HTTP المجرد (مثل `400 Bad Request` الذي لا يخبر العميل بأي شيء مفيد)، يقدم هذا المعيار **"تفاصيل المشكلة (Details of the Problem)"** في هيكل بيانات JSON قياسي وموحد يفهمه أي عميل أو مكتبة برمجية في العالم.
+* **الهيكل القياسي المعتمد في RFC 7807:**
+  ```json
+  {
+    "type": "https://errors.supermarket.com/errors/insufficient-funds",
+    "title": "Insufficient Funds",
+    "status": 400,
+    "detail": "The shift register has only $15.00, but the cash refund requires $50.00.",
+    "instance": "/api/v1/shifts/42/refunds",
+    "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    "invalid-params": [
+      { "name": "amount", "reason": "Amount exceeds current cash drawer balance" }
+    ]
+  }
+  ```
+
+---
+
+### 3. ما هي المشكلة الحقيقية التي يحلها ProblemDetails؟
+1. **كارثة عشوائية ردود الأخطاء (API Payload Chaos):**
+   بدون معيار، كل مطور أو فريق يخترع هيكلاً مختلفاً:
+   - خدمة الهوية تعيد: `{ "err": "User not found" }`
+   - خدمة المبيعات تعيد: `{ "success": false, "message": "Out of stock" }`
+   - خدمة المخازن تعيد نصاً خاماً: `"Product is inactive"`
+   - خادم الويب عند انهيار قاعدة البيانات يعيد صفحة HTML صفراء!
+   - **النتيجة:** فريق الـ Frontend (سواء كاشير، جوال، أو ويب) يحتاج لكتابة كتل `try-catch` وتحليلات معقدة ومتناقضة لكل خدمة!
+2. **غياب قابلية التتبع (Traceability):**
+   صعوبة ربط الخطأ الذي يظهر للمستخدم في شاشة الكاشير بالسجلات الداخلية (Logs) في السيرفر دون حقل `traceId` قياسي.
+
+---
+
+### 4. ما هي البدائل المتاحة؟ (Alternatives Considered)
+
+| البديل | المزايا | العيوب والتكلفة | التقييم الهندسي |
+| :--- | :--- | :--- | :--- |
+| **1. الاكتفاء بـ HTTP Status Codes فقط** (مثل 400, 404, 500) | خفيف جداً بدون أي Payload إضافي. | غير كافٍ إطلاقاً في أنظمة الـ Enterprise؛ 400 تعني "طلب غير صالح"، لكن ما الحقل الخاطئ؟ وما هو سبب الخطأ؟ | مرفوض للأنظمة الحقيقية. |
+| **2. هيكل مخصص يحدده الفريق** (مثل `{ status, message, data }`) | حرية كاملة في إضافة ما نريد. | غير قياسي؛ كل مكتبة خارجية أو أداة مراقبة لا تفهمه، وعند تبديل المطورين يبدأ الجدال حول التسميات. | حل محلي محدود لا يناسب المايكروسيرفس. |
+| **3. معيار RFC 7807 ProblemDetails** | **معيار دولي معتمد عالمياً**، مدعوم تلقائياً في .NET 8/9/10، ومكتبات Angular/React/Axios تفهمه تلقائياً. | يضيف بضعة بايتات لحجم الـ JSON مقارنة بالردود البسيطة. | **الحل المعتمد والموصى به من Microsoft و IETF.** |
+
+---
+
+### 5. المقايضات والتكلفة (Trade-offs & Cost Analysis)
+* **المكاسب (+):**
+  - **لغة تفاهم موحدة عالمياً:** الواجهات الأمامية تعتمد على معالج واحد فقط للأخطاء في كافة الخدمات (`error.response.data.title`, `detail`, `invalid-params`).
+  - **أمان فائق:** إخفاء أسرار النظام والـ StackTrace عن العملاء مع الاحتفاظ بها في السجلات عبر الـ `TraceId`.
+* **التكلفة المقبولة (-):**
+  - حجم استجابة الـ JSON أكبر قليلاً (بضع عشرات من البايتات الإضافية لحقول `type`, `title`, `instance`).
+  - يتطلب الالتزام بالمعيار تدريب الفريق على كتابة أكواد أخطاء دلالية منظمة.
+
+---
+
+## ❓ السؤال 16: لغز تجديد التوكن في Keycloak: كيف يعمل "بدون تدخل المستخدم"؟
+> **"هل خادم Keycloak هو الذي يجدد التوكن تلقائياً بدون تدخل المستخدم؟ كيف يعمل الـ Silent Refresh مع المايكروسيرفسز؟ وما دور الباك إند؟"**
+
+### 1. تصحيح المفهوم:
+* **المستخدم البشري (الكاشير)** لا يتدخل (لا يعيد كتابة الرمز السري)، نعم.
+* ولكن **خادم Keycloak لا يجدد التوكن بمفرده في الفراغ!** لأنه خادم ويب Stateless لا يملك اتصالاً مفتوحاً بكل جهاز ليدفع له التوكنات دون طلب.
+* **المسؤول الحقيقي عن التجديد هو تطبيق العميل (Client / Frontend):**
+  - إما **استباقياً (Proactive Timer):** قبل انتهاء الـ Access Token بدقيقة (عند الثانية 240 من أصل 300 ثانية)، يذهب الفرونت إند في الخلفية إلى خادم Keycloak ويجدد التوكن في صمت تام، فلا يواجه الكاشير أي انقطاع.
+  - أو **تفاعلياً (Reactive Interceptor):** عند استقبال خطأ `401 Unauthorized` من الـ API متبوعاً بترويسة `Token Expired`، يعترض الـ Interceptor الرد، يجدد التوكن بـ `Refresh Token`، ثم يعيد إرسال الطلب الأصلي تلقائياً.
+
+### 2. دور خدمات الـ Backend المصغرة:
+* خدمات الـ APIs تفحص الـ Access Token **محلياً في الذاكرة (Stateless Verification via JWKS)** بدون استدعاء خادم Keycloak في كل فاتورة، لتوفير أعلى سرعة ممكنة.
+* عند انتهاء صلاحية التوكن، ترفع الخدمة استثناء `SecurityTokenExpiredException` وتعيد ترويسة `WWW-Authenticate: Bearer error="invalid_token"` صريحة لتمكين الفرونت إند من تمييز انتهاء التوكن عن سحب الصلاحيات.
+
+📖 **للاطلاع على الدليل المعماري الكامل ومخططات تسلسل الأحداث وحالات الفشل المتزامنة (Thundering Herd)، راجع الوثيقة المخصصة:**
+* 🔗 [docs/keycloak-silent-token-refresh-deep-dive.md](file:///e:/dotnet/POS/docs/keycloak-silent-token-refresh-deep-dive.md)
+
+---
+
+## ❓ السؤال 17: استراتيجية الـ Pagination في أنظمة الـ Enterprise: لماذا لا نستخدم قالباً واحداً؟
+> **"ما هي أنواع الـ Pagination؟ ولماذا صممنا نمطين منفصلين (PagedList و CursorPagedList) في BuildingBlocks بدلاً من كلاس واحد هجين؟"**
+
+```mermaid
+flowchart TD
+    subgraph OffsetPaging [1. Offset-Based Pagination: القائم على التخطي]
+        Q1["SELECT * FROM Invoices ORDER BY Id OFFSET 1000000 LIMIT 20"]
+        Scan["قاعدة البيانات تفحص مليون صف وترميها في الزبالة لتأخذ آخر 20 صفاً!"]
+        PerfBad["الأداء ينهار كلما تقدمت في الصفحات O(N)"]
+    end
+
+    subgraph CursorPaging [2. Keyset / Cursor-Based Pagination: القائم على المؤشر]
+        Q2["SELECT * FROM Invoices WHERE Id > 10542 ORDER BY Id ASC LIMIT 20"]
+        Seek["القفز الفوري عبر الـ B-Tree Index مباشرة بدون قراءة الصفوف السابقة!"]
+        PerfGood["الأداء ثابت فائق السرعة سواء في الصفحة 1 أو الصفحة مليون O(1)"]
+    end
+```
+
+### 1. لماذا يستحيل دمج النوعين في كلاس واحد دون إفساد الأداء؟
+* في الترقيم القائم على المؤشر (**Keyset / Cursor**)، الهدف الأساسي هو **السرعة الثابتة O(1)**.
+* لحساب إجمالي الصفحات (`TotalPages`) في الترقيم الكلاسيكي، نحن مجبرون على تشغيل استعلام:
+  `SELECT COUNT(*) FROM Invoices;`
+* في جدول يحتوي على **10 ملايين فاتورة**، استعلام `COUNT(*)` يجبر محرك PostgreSQL على فحص الجدول بالكامل (Full Table Scan) ويستغرق ثوانٍ ثمينة تقتل أداء السيرفر!
+* **القرار الهندسي:** فصلهما تماماً حتى لا يُجبر مستخدم الـ Cursor على دفع ضريبة استعلام `COUNT(*)` البطيء.
+
+### 2. متى نستخدم كل نمط؟
+| وجه المقارنة | `PagedList<T>` (Offset-Based) | `CursorPagedList<T, TCursor>` (Keyset / Cursor) |
+| :--- | :--- | :--- |
+| **طبيعة الاستخدام** | شاشات الإدارة والتقارير (Admin Portal). | شاشات الكاشير السريعة والعمليات اللحظية (POS Streams). |
+| **حجم البيانات** | محدود أو متوسط (< 100,000 سجل). | جداول ضخمة أو مليونية (ملايين الفواتير وحركات الصناديق). |
+| **المدخلات** | `PageNumber` و `PageSize`. | `Cursor` (مؤشر آخر عنصر) و `PageSize`. |
+| **المخرجات** | `Items`, `TotalCount`, `TotalPages`, `PageNumber`. | `Items`, `NextCursor`, `HasNextPage` (بدون TotalCount). |
+| **تجربة المستخدم** | أزرار الانتقال المباشر لأرقام الصفحات (1، 2، 3...). | التمرير اللانهائي (Infinite Scroll) أو أزرار (التالي / السابق). |
+| **تعقيد الأداء** | $O(N)$ — يتباطأ مع التقدم في الصفحات الأخيرة. | $O(1)$ — ثابت وفائق السرعة يعتمد على الفهرس مباشرة. |
+
+### 3. الحماية الدفاعية والتهيئة من ملفات الإعدادات (Defense-in-Depth & PaginationSettings):
+تم اعتماد استراتيجية دفاعية ثنائية الطبقات:
+1. **طبقة الثوابت الدفاعية (Fallback Constants):** `FallbackMaxPageSize = 100` و `FallbackDefaultPageSize = 10 / 20` لحماية الخادم من الانهيار حتى لو انعدمت ملفات التهيئة.
+2. **طبقة الـ Options Pattern (`PaginationSettings`):** كلاس إعدادات يتيح ضبط الحدود ديناميكياً عبر `appsettings.json` لفرق العمليات والـ DevOps دون إعادة بناء الكود.
+
+---
+
+## ❓ السؤال 18: لماذا لا نحقن `IOptions<PaginationSettings>` داخل `PaginationParams` مباشرة؟ وما وظيفة كل ملف في حزمة الترقيم؟
+> **"لماذا لا نستقبل `MaxPageSize` في `PaginationParams` عبر حقن التبعيات (DI) مثلما فعلنا في `PerformancePipelineBehavior`؟ وما هو التشريح الوظيفي لكل ملف من ملفات الترقيم؟"**
+
+### 1. الفارق المعماري الجوهري: DTO (ناقل بيانات) مقابل Service (معالج منطقي):
+* **`PerformancePipelineBehavior`:** هو **خدمة وسيطة (Pipeline Service)** تُنشأ وتُدار بالكامل بواسطة حاوية الـ DI (`IServiceProvider`)؛ ولذلك يُعد حقن `IOptions` فيها تصميماً قياسياً وأصيلاً في ASP.NET Core.
+* **`PaginationParams`:** هو **كائن نقل بيانات / باراميتر استعلام (DTO / Query Parameter Object)**:
+  - يُنشأ تلقائياً بواسطة **Model Binder** الخاص بـ ASP.NET Core عند قراءة روابط الـ HTTP Query String (مثل: `GET /api/products?pageNumber=2&pageSize=20`).
+  - محرك الـ Model Binding يستدعي الـ Parameterless Constructor ولا يملك حقن خدمات الـ DI داخل كائنات الـ Query Parameters إلا عبر كتابة Custom Model Binders معقدة وهشة تكسر المعايير.
+  - حقن خدمات داخل الـ DTOs يكسر مبدأ **Separation of Concerns** ويجعل كتابة الـ Unit Tests واختبارات الـ MediatR Handlers مليئة بإنشاء كائنات وهمية (Mocking) لا داعي لها.
+
+### 2. الحل المعماري الأفضل:
+* جعل `PaginationParams` و `CursorParams` كائنات بيانات نقية (Pure POCO Records) مع حماية ذاتية (Self-Guarding Fallbacks).
+* توفير كلاس `PaginationSettings` يمكن حقنه في طبقة التحقق (`FluentValidation`) للتحقق من الحدود ديناميكياً من `appsettings.json` قبل وصول الطلب للـ Handler أو قاعدة البيانات.
+
+### 3. التشريح الوظيفي لملفات حزمة الترقيم (Component Anatomy):
+
+| الملف | نوعه المعماري | وظيفته ومسؤوليته الوحيدة (Single Responsibility) |
+| :--- | :--- | :--- |
+| **`PaginationSettings.cs`** | **Options Class** | يمثل نموذج قراءة إعدادات الترقيم من قسم `"Pagination"` في `appsettings.json`، مما يسمح لمهندسي العمليات بتعديل الحجم الافتراضي والأقصى للصفحات أثناء التشغيل. |
+| **`PaginationParams.cs`** | **Request DTO (Offset)** | يستقبل معايير الترقيم الكلاسيكي (`PageNumber`, `PageSize`) من استعلامات الـ API أو MediatR، ويضمن عدم إدخال أرقام سالبة أو أحجام صفحات غير آمنة دفاعياً. |
+| **`PagedList.cs`** | **Response DTO + Factory** | يغلف نتائج الاستعلام مع الميتاداتا الإدارية (`TotalCount`, `TotalPages`, `HasPreviousPage`, `HasNextPage`). يحتوي على مصنع ذكي `CreateAsync` ينفذ `CountAsync` ثم `Skip/Take` عبر EF Core. |
+| **`CursorParams.cs`** | **Request DTO (Keyset)** | يستقبل مؤشر الترقيم (`Cursor`) وحجم الصفحة للعمليات اللحظية؛ صُمم كـ Generic Type (`TCursor`) ليدعم أي نوع مؤشر (مثل `Guid`, `long`, `DateTime`). |
+| **`CursorPagedList.cs`** | **Response DTO (Keyset)** | يغلف نتائج الترقيم عالي السرعة مع مؤشر العنصر التالي (`NextCursor`) وزر التحقق (`HasNextPage`)، ويمنع تماماً تنفيذ استعلامات `COUNT(*)` المنهكة. |

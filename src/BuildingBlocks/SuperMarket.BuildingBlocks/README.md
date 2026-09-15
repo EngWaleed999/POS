@@ -13,6 +13,9 @@
 5. [المقارنة المعمارية وهل هذا التصميم Over-Engineering؟](#5-المقارنة-المعمارية-وهل-هذا-التصميم-over-engineering)
 6. [المعايير القياسية والتوثيق الرسمي لشركة Microsoft](#6-المعايير-القياسية-والتوثيق-الرسمي-لشركة-microsoft)
 7. [أتمتة البنية التحتية في EF Core (AuditSaveChangesInterceptor & SoftDeleteFilter)](#7-أتمتة-البنية-التحتية-في-ef-core)
+8. [البنية التحتية لـ CQRS وسلوكيات الـ Pipeline (MediatR Pipeline Behaviors)](#8-البنية-التحتية-لـ-cqrs-وسلوكيات-الـ-pipeline)
+9. [ناشر أحداث الدومين التلقائي (DispatchDomainEventsInterceptor)](#9-ناشر-أحداث-الدومين-التلقائي-dispatchdomaineventsinterceptor)
+10. [مصفوفة القرارات المعمارية، المقايضات، والتكلفة والحل (Architectural Decisions & Trade-Offs)](#10-مصفوفة-القرارات-المعمارية-المقايضات-والتكلفة-والحل)
 
 ---
 
@@ -243,3 +246,102 @@ return result.Match(
 ```csharp
 var allBranches = await context.Branches.IgnoreQueryFilters().ToListAsync();
 ```
+
+---
+
+## 8. البنية التحتية لـ CQRS وسلوكيات الـ Pipeline
+
+> **الفلسفة:** عزل الاهتمامات المشتركة (Cross-Cutting Concerns) عن معالجات البزنس (Handlers)، وتطبيق نمط المزيّن (Decorator Pattern) عبر MediatR Pipelines وفق المعيار المعماري الموصى به من Microsoft.
+
+### أ. واجهات الـ CQRS الصريحة (`ICommand` و `IQuery`):
+بدلاً من استخدام `IRequest<T>` مباشرة من MediatR، قمنا بتعريف واجهات دلالية صريحة تجبر جميع العمليات على إرجاع نمط النتائج:
+* **`ICommand` و `ICommand<TResponse>`:** تمثل عمليات تغيير الحالة (State Mutations). ترجع دائماً `Result` أو `Result<TResponse>`.
+* **`IQuery<TResponse>`:** تمثل عمليات القراءة والاستعلام (Read-Only Queries). ترجع دائماً `Result<TResponse>`.
+* **الفائدة الهندسية:** منع المطور من إرجاع كائنات مجردة أو رمي استثناءات، وضمان تجانس معالجة الردود عبر كل الخدمات.
+
+### ب. بوابة التفتيش والتحقق (`ValidationPipelineBehavior`):
+* **الوظيفة:** اعتراض الطلبات وفحصها تلقائياً عبر مكتبة `FluentValidation` قبل أن تصل إلى الـ Handler أو تلمس قاعدة البيانات.
+* **التنفيذ المتوازي:** تشغيل جميع الفاحصين المسجلين في نفس الوقت عبر `Task.WhenAll`.
+* **الإيقاف المبكر (Short-Circuiting):** في حال وجود أي مخالفة، يتم إيقاف المسار فوراً وتحويل الأخطاء إلى `Result.Failure` مع كود `General.Validation`، دون تشغيل الـ Handler.
+* **مصنع النتائج للأنواع العامة (`Result Factory`):** استخدام الانعكاس المحسّن للتعامل مع الـ Generic Types (`Result` vs `Result<T>`).
+
+### ج. تتبع دورة حياة الطلب (`LoggingPipelineBehavior`):
+* **الوظيفة:** تسجيل الأحداث الهيكلية (Structured Logging) لدورة حياة الطلب اعتماداً على `ILogger` كمجرّد رسمي من مايكروسوفت دون الارتباط المباشر بـ Serilog.
+* **التصنيف الذكي:**
+  - تسجيل `Information` عند دخول الطلب بنجاح.
+  - تسجيل `Warning` عند حدوث خطأ بزنس متوقع (`IsFailure == true`) مع ذكر كود الخطأ وتفاصيله، دون اعتبار ذلك انهياراً للنظام.
+  - تسجيل `Error` كامل مع الـ StackTrace عند حدوث استثناء غير متوقع (`Unhandled Exception`) قبل إعادة رميه.
+
+### د. مراقبة الأداء والمقاييس (`PerformancePipelineBehavior`):
+* **الوظيفة:** قياس زمن الاستجابة باستخدام `Stopwatch` ومراقبة اتفاقية مستوى الخدمة (SLA).
+* **OpenTelemetry Native Metrics:** استخدام `System.Diagnostics.Metrics.Meter` لتسجيل:
+  - `pos_requests_total`: عداد إجمالي لعدد الطلبات المعالجة.
+  - `pos_request_duration_ms`: رسم بياني (Histogram) يوزع أزمنة الاستجابة بالمللي ثانية لتغذية Prometheus و Grafana.
+* **حماية `finally`:** استخدام كتلة `finally` لضمان حساب الوقت وتحديث العدادات بدقة حتى لو انهار الطلب باستثناء مفاجئ.
+
+### هـ. نمط الخيارات والإعدادات الديناميكية (`PerformanceSettings` & Options Pattern):
+* **كلاس الإعدادات:** `PerformanceSettings` بخصائص قوية النوعية (`SlowRequestThresholdMs`) وقيمة افتراضية آمنة (`500ms`).
+* **الربط مع `appsettings.json`:** عبر مفتاح القسم الثابت `PerformanceSettings.SectionName = "Performance"`.
+* **البرمجة الدفاعية (Defensive Fallback):** حقن اختياري `IOptions<PerformanceSettings>? options = null`؛ بحيث يعمل الكود بسلاسة بقيمة 500ms دون الحاجة لكتابة إعدادات في الـ Unit Tests أو الخدمات البسيطة.
+
+---
+
+## 9. ناشر أحداث الدومين التلقائي (DispatchDomainEventsInterceptor)
+
+```mermaid
+flowchart TD
+    subgraph LocalProcess [نفس الخدمة ونفس الذاكرة - In-Process]
+        AggRoot[AggregateRoot] -- "AddDomainEvent()" --> EvtList[Domain Events Queue]
+        SaveChanges[DbContext.SaveChangesAsync] --> Interceptor[DispatchDomainEventsInterceptor]
+        Interceptor -- "1. ChangeTracker.Entries<IAggregateRoot>" --> Extract[استخراج الأحداث]
+        Extract -- "2. ClearDomainEvents()" --> Clear[مسح الأحداث فوراً]
+        Clear -- "3. IPublisher.Publish()" --> Mediator[MediatR In-Process Handlers]
+    end
+```
+
+### أ. الفرق الجوهري: Domain Event vs Integration Event
+| وجه المقارنة | Domain Event (أحداث النطاق الداخلي) | Integration Event (أحداث التكامل الخارجي) |
+| :--- | :--- | :--- |
+| **النطاق والحدود** | داخل نفس الميكروسيرفيس ونفس الذاكرة (In-Process). | عبر الشبكة بين ميكروسيرفسز مختلفة (Out-of-Process). |
+| **وسيلة النقل** | محلياً عبر MediatR `IPublisher`. | عبر Message Broker (مثل RabbitMQ أو Kafka). |
+| **المعاملة المالية والبيانات** | تحدث ضمن نفس الـ Database Transaction أو تتبعها محلياً. | تتبع مبدأ الاتساق النهائي (Eventual Consistency) عبر Outbox Pattern. |
+| **الهدف** | إخطار مكونات فرعية داخل نفس النطاق (تحديث إحصاءات، سجلات داخلية). | إشعار الخدمات المستقلة (مثل إشعار المخازن بخصم الكمية بعد الفاتورة). |
+
+### ب. لماذا الاعتماد على SaveChangesInterceptor؟
+1. **منع النسيان البشري:** عدم إجبار المطور على استدعاء `_mediator.Publish` يدوياً في كل Handler.
+2. **عزل النطاق (Pure Domain):** تظل الكيانات خالية من أي حقن لخدمات مثل MediatR، ومسؤوليتها تقتصر على تسجيل ما حدث في `_domainEvents`.
+3. **حماية التكرار (Idempotency Protection):** يتم مسح الأحداث `root.ClearDomainEvents()` **قبل** عملية النشر الفعلية لضمان عدم تكرار النشر إذا قام الـ Handler الفرعي باستدعاء `SaveChangesAsync` آخر داخل نفس السلسلة.
+
+---
+
+## 10. مصفوفة القرارات المعمارية، المقايضات، والتكلفة والحل
+
+| القرار المعماري | لماذا اتخذناه؟ (Why) | ما البديل المرفوض؟ (Why Not) | المقايضات والتكلفة (Trade-Off / Cost) | الحل المعتمد والمطبق (The Solution) |
+| :--- | :--- | :--- | :--- | :--- |
+| **فصل Logging عن Performance** | تطبيق مبدأ SRP وتوفير المرونة لتعطيل أو اختبار مقاييس الأداء بمعزل عن سجلات النص. | دمج الـ Logging والـ Metrics وساعة التوقيف في كلاس واحد كبير. | زيادة استدعاء دالة واحدة في الـ Pipeline (Microsecond Overhead). | كلاس `LoggingPipelineBehavior` للـ Lifecycle فقط، وكلاس `PerformancePipelineBehavior` للمقاييس والساعة. |
+| **Options Pattern للـ Threshold** | إتاحة ضبط عتبة البطء (مثل 300ms للـ POS و 2000ms للتقارير) بدون إعادة بناء الكود. | تثبيت القيمة كـ `const int = 500` في الكود المصدري. | تعقيد بسيط لحقن `IOptions<T>` مع ملفات الإعدادات. | كلاس `PerformanceSettings` بقيمة افتراضية دفاعية آمنة وحقن `IOptions<PerformanceSettings>?`. |
+| **EF Core Interceptor للأحداث** | أتمتة إطلاق الـ Domain Events مركزياً عند الحفظ. | النشر اليدوي داخل كل Command Handler أو حقن الوسيط داخل الـ Entity. | صعوبة التحكم في ترتيب المعالجة إذا تطلبت الأحداث سلوكاً مخصصاً جداً. | `DispatchDomainEventsInterceptor` يعترض `SavingChangesAsync` ويمسح الأحداث وينشرها بـ `IPublisher`. |
+| **Native System.Diagnostics.Metrics** | الاعتماد على معيار مايكروسوفت الأصيل المتوافق مع OpenTelemetry دون حزم خارجية. | تضمين حزم OpenTelemetry الكاملة داخل مكتبة BuildingBlocks. | يتطلب تهيئة OpenTelemetry Exporters في مشروع الـ Web API لاحقاً. | تعريف `Meter` و `Counter` و `Histogram` مدمجة بأقل استهلاك للذاكرة وبدون تبعيات طرف ثالث. |
+
+---
+
+## 11. استراتيجية الترقيم المزدوجة (Dual-Strategy Pagination)
+
+> **المبدأ المعماري:** لا يوجد حل واحد يناسب الجميع (No One-Size-Fits-All) في أنظمة نقاط البيع الضخمة؛ شاشات الإدارة تحتاج ترقيماً مختلفاً تماماً عن شاشات الكاشير وعمليات الفواتير اللحظية.
+
+### أ. النمط الكلاسيكي: `PagedList<T>` و `PaginationParams` (Offset-Based)
+* **مجال الاستخدام:** شاشات الإدارة، إعدادات النظام، وقوائم الفروع والموظفين المحدودة (< 100,000 سجل).
+* **المخرجات:** يوفر `PageNumber` و `PageSize` و `TotalCount` و `TotalPages` ويتيح للمستخدم القفز لأي صفحة مباشرة مع أزرار (السابق / التالي).
+* **المصنع المدمج:** دالة `PagedList<T>.CreateAsync(query, pageNumber, pageSize)` تنفذ `CountAsync` و `Skip/Take/ToListAsync` بكفاءة عبر EF Core.
+
+### ب. النمط اللحظي فائق السرعة: `CursorPagedList<T, TCursor>` و `CursorParams<TCursor>` (Keyset / Cursor-Based)
+* **مجال الاستخدام:** جداول المبيعات المليونية، حركات الكاشير، سجلات التدقيق (Audit Logs)، والتمرير اللانهائي (Infinite Scroll).
+* **المخرجات:** أداء ثابت $O(1)$ يعتمد على الفهرس (Index Seek)؛ **يتجنب استعلام `COUNT(*)` المنهك تماماً**، ولا يتأثر بانزلاق البيانات (Zero Data Drift).
+
+### جـ. الحماية الدفاعية والتهيئة الديناميكية (`PaginationSettings`):
+* **كلاس الإعدادات:** `PaginationSettings` يوفر قابلية الضبط لـ `DefaultPageSize` و `MaxPageSize` عبر `appsettings.json` تحت قسم `"Pagination"`.
+* **الحماية ثنائية الطبقات (Defense-in-Depth):**
+  - **طبقة Fallback الدفاعية:** ثوابت أمان صلبة داخل الـ Records (`FallbackMaxPageSize = 100`, `FallbackDefaultPageSize = 10 / 20`) تضمن حماية السيرفر من هجمات الـ DoS حتى لو تعطلت ملفات الإعدادات.
+  - **طبقة الربط المرن:** تتيح حقن `IOptions<PaginationSettings>` داخل الـ Validation Pipelines أو الـ Handlers للتحقق الديناميكي دون تلويث الـ DTOs بتبعيات الـ DI.
+
+
