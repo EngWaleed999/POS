@@ -1,0 +1,54 @@
+name: CI - SuperMarket POS Platform
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build, Verify & Test (.NET 10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout Source Code
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Setup .NET 10 SDK & NuGet Caching
+      # -----------------------------------------------------------------------
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+
+      # -----------------------------------------------------------------------
+      # 3. Restore Dependencies
+      # -----------------------------------------------------------------------
+      - name: Restore NuGet packages
+        run: dotnet restore SuperMarketPOS.slnx
+
+      # -----------------------------------------------------------------------
+      # 4. Build Solution (Release Mode)
+      # -----------------------------------------------------------------------
+      - name: Build solution
+        run: dotnet build SuperMarketPOS.slnx --configuration Release --no-restore
+
+      # -----------------------------------------------------------------------
+      # 5. Run Automated Tests
+      # -----------------------------------------------------------------------
+      - name: Run automated tests
+        run: dotnet test SuperMarketPOS.slnx --configuration Release --no-build --verbosity normal

@@ -5,16 +5,12 @@ using SuperMarket.BuildingBlocks.Results;
 
 namespace SuperMarket.BuildingBlocks.Application;
 
-/// <summary>
-/// MediatR pipeline behavior that automatically validates incoming requests using registered <see cref="IValidator{TRequest}"/> instances.
-/// If validation fails, short-circuits execution and returns an appropriate <see cref="Result"/> or <see cref="Result{TValue}"/>
-/// without invoking the command handler.
-/// </summary>
-/// <typeparam name="TRequest">The incoming command or query type.</typeparam>
-/// <typeparam name="TResponse">The expected response type, constrained to Result types.</typeparam>
 public sealed class ValidationPipelineBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
+    // -------------------------------------------------------------------------
+    // Dependencies & Injected Services
+    // -------------------------------------------------------------------------
     private readonly IEnumerable<IValidator<TRequest>> _validators;
 
     public ValidationPipelineBehavior(IEnumerable<IValidator<TRequest>> validators)
@@ -22,6 +18,9 @@ public sealed class ValidationPipelineBehavior<TRequest, TResponse> : IPipelineB
         _validators = validators;
     }
 
+    // -------------------------------------------------------------------------
+    // Pipeline Execution Gate
+    // -------------------------------------------------------------------------
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
@@ -47,13 +46,15 @@ public sealed class ValidationPipelineBehavior<TRequest, TResponse> : IPipelineB
             return await next();
         }
 
-        // Format combined validation error message
         var errorMessage = string.Join(" | ", failures.Select(f => $"{f.PropertyName}: {f.ErrorMessage}"));
         var validationError = Error.Validation("General.Validation", errorMessage);
 
         return CreateValidationResult(validationError);
     }
 
+    // -------------------------------------------------------------------------
+    // Result Factory Helper (Builds Result or Result<T> on Failure)
+    // -------------------------------------------------------------------------
     private static TResponse CreateValidationResult(Error error)
     {
         if (typeof(TResponse) == typeof(Result))
