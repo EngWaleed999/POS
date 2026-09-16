@@ -31,4 +31,8 @@
     <Project Path="src/Services/Sales/SuperMarket.Sales.Domain/SuperMarket.Sales.Domain.csproj" />
     <Project Path="src/Services/Sales/SuperMarket.Sales.Infrastructure/SuperMarket.Sales.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/BuildingBlocks/">
+    <Project Path="tests/BuildingBlocks/SuperMarket.BuildingBlocks.UnitTests/SuperMarket.BuildingBlocks.UnitTests.csproj" />
+  </Folder>
 </Solution>
