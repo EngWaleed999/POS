@@ -1,10 +1,5 @@
 
-using SuperMarket.BuildingBlocks.Domain;
-
-namespace SuperMarket.BuildingBlocks.Domain
-{
-    
-};
+namespace SuperMarket.BuildingBlocks.Domain;
 
 /// <summary>
 /// Marker interface for Aggregate Roots in Domain-Driven Design.
