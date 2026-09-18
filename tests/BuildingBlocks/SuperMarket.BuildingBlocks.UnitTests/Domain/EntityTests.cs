@@ -228,6 +228,24 @@ public class EntityTests
         entity.Equals(nonEntityNumber).Should().BeFalse();
     }
 
+    [Fact]
+    public void EqualsObjectOverload_ShouldHandlePolymorphicCastsAndNullCorrectly()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var entity = new OrderTestEntity(id);
+        object sameRef = entity;
+        object equalEntity = new OrderTestEntity(id);
+        object differentEntity = new OrderTestEntity(Guid.NewGuid());
+        object? nullObj = null;
+
+        // Act & Assert (invokes public override bool Equals(object? obj))
+        entity.Equals(sameRef).Should().BeTrue();
+        entity.Equals(equalEntity).Should().BeTrue();
+        entity.Equals(differentEntity).Should().BeFalse();
+        entity.Equals(nullObj).Should().BeFalse();
+    }
+
     // -------------------------------------------------------------------------
     // 15. Real Collection & Hash Behavior in HashSet (ENT-15)
     // -------------------------------------------------------------------------
@@ -255,18 +273,46 @@ public class EntityTests
     }
 
     // -------------------------------------------------------------------------
-    // 16. Integer ID Generic Support (ENT-16)
+    // 16. Parameterized IsTransient Tests across Primitive ID Types ([Theory])
     // -------------------------------------------------------------------------
-    [Fact]
-    public void IsTransient_ShouldWorkCorrectly_WithIntegerIdEntities()
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(42, false)]
+    [InlineData(-1, false)]
+    public void IsTransient_ShouldEvaluateCorrectly_ForIntegerIdentities(int id, bool expectedTransient)
     {
-        // Arrange: In integer IDs, 0 is the default transient ID
-        var transient = new IntIdTestEntity(0);
-        var persisted = new IntIdTestEntity(42);
+        // Arrange
+        var entity = new IntIdTestEntity(id);
 
         // Act & Assert
-        transient.IsTransient().Should().BeTrue();
-        persisted.IsTransient().Should().BeFalse();
+        entity.IsTransient().Should().Be(expectedTransient);
+    }
+
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000000", true)]
+    [InlineData("a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d", false)]
+    public void IsTransient_ShouldEvaluateCorrectly_ForGuidIdentities(string guidString, bool expectedTransient)
+    {
+        // Arrange
+        var id = Guid.Parse(guidString);
+        var entity = new OrderTestEntity(id);
+
+        // Act & Assert
+        entity.IsTransient().Should().Be(expectedTransient);
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("ORD-100", false)]
+    [InlineData("", false)] // In C#, default(string) is null, so empty string is NOT transient
+    public void IsTransient_ShouldEvaluateCorrectly_ForStringIdentities(string? id, bool expectedTransient)
+    {
+        // Arrange
+        var entity = new StringIdTestEntity(id!);
+
+        // Act & Assert
+        entity.IsTransient().Should().Be(expectedTransient);
     }
 
     // -------------------------------------------------------------------------
@@ -302,6 +348,13 @@ public class EntityTests
     private class IntIdTestEntity : Entity<int>
     {
         public IntIdTestEntity(int id) : base(id)
+        {
+        }
+    }
+
+    private class StringIdTestEntity : Entity<string>
+    {
+        public StringIdTestEntity(string id) : base(id)
         {
         }
     }
