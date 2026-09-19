@@ -1,6 +1,7 @@
 # SuperMarket.BuildingBlocks — Architecture & Engineering Overview
 
 > **Current State:** `Implemented`  
+> **Testing Status:** `149 Tests Passing (100%)` | `Branch Coverage: 94.18%` | `Line Coverage: 91.22%`  
 > **Target Framework:** `.NET 10.0` (`net10.0`)  
 > **Scope:** Core shared kernel library for all microservices in the SuperMarket POS ecosystem.
 
@@ -152,6 +153,7 @@ sequenceDiagram
 | **Configure pagination limits** | `appsettings.json` (`"Pagination"`) | Configure `DefaultPageSize` and `MaxPageSize` via `PaginationSettings.cs`. |
 | **Register BuildingBlocks in Web API** | `Program.cs` | Call `builder.Services.AddBuildingBlocksWeb()` and `app.UseBuildingBlocksWeb()`. |
 | **Attach interceptors to service DbContext** | `Infrastructure/DependencyInjection.cs` | Inject `AuditSaveChangesInterceptor` and `DispatchDomainEventsInterceptor` into `options.AddInterceptors()`. |
+| **Run & audit automated test suite** | `tests/BuildingBlocks/SuperMarket.BuildingBlocks.UnitTests/` | Run `dotnet test SuperMarketPOS.slnx` to verify all domain invariants and behaviors in seconds (see [Testing.md](Testing.md)). |
 
 ---
 

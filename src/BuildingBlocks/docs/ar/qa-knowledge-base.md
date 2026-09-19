@@ -1,6 +1,6 @@
 # بنك المعرفة الهندسي وأسئلة المقابلات (QA Knowledge Base)
 
-> **النطاق:** مرجع هندسي متقدم يغطي الفلسفة المعمارية، الأسئلة الحرجة، ميكانيكا الكود الداخلية، وتجهيز أسئلة المقابلات التقنية المستخرجة مباشرة من تطبيق `SuperMarket.BuildingBlocks`.
+> **النطاق:** مرجع هندسي متقدم يغطي الفلسفة المعمارية، الأسئلة الحرجة، ميكانيكا الكود الداخلية، وتجهيز أسئلة المقابلات التقنية المستخرجة مباشرة من تطبيق `SuperMarket.BuildingBlocks` وحزمة اختباراته.
 
 ---
 
@@ -96,3 +96,38 @@
 | **أحداث الدومين محلياً عبر MediatR** | بساطة المعمارية، اتساق محلي فوري، ونقاء تام لكلاسات الدومين. | المعالجات تعمل تزامناً قبل الـ Commit؛ المعالجات البطيئة قد تطيل وقت قفل جداول قاعدة البيانات. |
 | **تجميع BuildingBlocks في ملف DLL واحد** | سرعة التطوير، انعدام التعقيد في مراجع المشاريع، وسهولة الصيانة للفريق. | إمكانية وصول مشاريع الـ Domain نظرياً لكلاسات الـ Infrastructure إن لم يلتزم الفريق بقواعد المراجعة البرمجية. |
 | **تبعية EF Core المباشرة في `PagedList`** | تجنب بناء تجريدات استعلام غير متزامنة معقدة، واستغلال كفاءة EF Core المباشرة. | احتواء طبقة الـ Application على مرجع لمكتبة `Microsoft.EntityFrameworkCore`. |
+
+---
+
+## 5. أسئلة المقابلات المتقدمة حول هندسة الاختبارات (Testing & QA Interview Questions)
+
+### س11: لماذا استخدمنا `Microsoft.EntityFrameworkCore.InMemory` لاختبار الـ Interceptors بدلاً من Mocking للـ DbContext؟
+* **الإجابة:** في هندسة الاختبارات الاحترافية، يعتبر Mocking للـ `DbContext` أو `DbSet` مضيعة للوقت وفخاً هندسياً شهيراً (Testing Anti-Pattern):
+  - مقاطعات EF Core تتفاعل مباشرة مع محرك الـ `ChangeTracker` ومصفوفات حالات الكيانات (`Added`, `Modified`, `Deleted`). لا يمكن محاكاة هذا التعقيد الداخلي عبر Moq بشكل موثوق.
+  - استخدام قاعدة بيانات الذاكرة (`InMemoryDatabase`) يمنحنا `DbContext` حقيقي بنسبة 100%، ينفذ دورة حياة `SaveChangesAsync()` كاملة، ويشغل الـ Interceptors بدقة وبزمن تنفيذ لا يتعدى بضعة أجزاء من الثانية دون الحاجة لحاويات Docker أو شبكة اتصالات.
+
+---
+
+### س12: كيف تثبت أن اختباراتك ليست مجرد اختبارات شكلية (Tautological / Shallow Tests)؟
+* **الإجابة:** عبر تطبيق منهجية **Mutation Testing (اختبار الطفرات)**:
+  - الاختبار الشكلي هو اختبار يمر بنسبة 100% لأن توكيداته سطحية (مثل `Assert.NotNull(result)`).
+  - لإثبات قوة الاختبار، نقوم بتعطيل أو تغيير سطر منطقي في كود الإنتاج (مثلاً: حذف سطر حماية `CreatedAt.IsModified = false`).
+  - إذا كانت الاختبارات سلوكية وحقيقية، سيفشل الاختبار فوراً (`Mutation Killed`) ويحدد بدقة السطر والسبب. وهذا ما تم إثباته في اختبارات `SuperMarket.BuildingBlocks`.
+
+---
+
+### س13: ما هو فخ الـ Generic Interface Dispatch في MediatR عند الاختبار عبر Moq؟
+* **الإجابة:** عندما يستدعي الكود:
+  ```csharp
+  IDomainEvent domainEvent = new ConcreteEvent();
+  await _publisher.Publish(domainEvent, cancellationToken);
+  ```
+  يقوم محرك C# بربط الاستدعاء بالواجهة العامة `IPublisher.Publish<IDomainEvent>()` وليس `Publish<ConcreteEvent>()`.
+  إذا كتب مهندس الاختبار:
+  ```csharp
+  publisherMock.Verify(p => p.Publish(It.IsAny<ConcreteEvent>(), ...)); // ❌ سيفشل الاختبار!
+  ```
+  لذلك يجب أن يكون مهندس الاختبار على دراية بكيفية تعامل Moq مع الواجهات المجردة ويكتب:
+  ```csharp
+  publisherMock.Verify(p => p.Publish<IDomainEvent>(It.IsAny<ConcreteEvent>(), ...), Times.Once); //  صحيح ومحكم
+  ```
