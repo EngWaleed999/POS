@@ -1,6 +1,7 @@
 # مكتبة النواة المشتركة (SuperMarket.BuildingBlocks) — الدليل الهندسي والمعماري
 
 > **الحالة الراهنة (Current State):** `Implemented` (مكتملة ومطبقة برمجياً)  
+> **حالة الاختبارات وضمان الجودة (Testing Status):** `149 Tests Passing (100%)` | `Branch Coverage: 94.18%` | `Line Coverage: 91.22%`  
 > **إطار العمل المستهدف (Target Framework):** `.NET 10.0` (`net10.0`)  
 > **النطاق المعماري (Scope):** مكتبة النواة المشتركة (Shared Kernel) لكافة الخدمات المصغرة (Microservices) في منظومة SuperMarket POS.
 
@@ -153,6 +154,7 @@ sequenceDiagram
 | **ضبط حدود الترقيم القصوى** | `appsettings.json` (قسم `"Pagination"`) | عدل قيم `DefaultPageSize` و `MaxPageSize` عبر `PaginationSettings.cs`. |
 | **تفعيل BuildingBlocks في الـ Web API** | ملف `Program.cs` الخاص بالخدمة | استدعِ `builder.Services.AddBuildingBlocksWeb()` و `app.UseBuildingBlocksWeb()`. |
 | **ربط المراقبين مع DbContext الخدمة** | مشروع `Infrastructure` في الخدمة | احقن `AuditSaveChangesInterceptor` و `DispatchDomainEventsInterceptor` داخل `options.AddInterceptors()`. |
+| **تشغيل وتدقيق الاختبارات الآلية** | `tests/BuildingBlocks/SuperMarket.BuildingBlocks.UnitTests/` | نفّذ `dotnet test SuperMarketPOS.slnx` للتحقق من كافة الشروط الصارمة، وراجع [Testing.md](Testing.md). |
 
 ---
 
