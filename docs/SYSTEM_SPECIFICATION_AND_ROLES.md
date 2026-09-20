@@ -56,7 +56,9 @@ erDiagram
         string currency
         boolean is_active
         timestamp created_at
+        string created_by
         timestamp updated_at
+        string updated_by
     }
 
     BRANCH_OPERATING_HOURS {
@@ -73,7 +75,9 @@ erDiagram
         string description
         boolean is_role_active
         timestamp created_at
+        string created_by
         timestamp updated_at
+        string updated_by
     }
 
     PERMISSIONS {
@@ -86,28 +90,33 @@ erDiagram
     }
 
     ROLE_PERMISSIONS {
-        uuid role_perm_id PK
-        uuid role_id FK
-        uuid permission_id FK
+        uuid role_id PK,FK
+        uuid permission_id PK,FK
         timestamp created_at
     }
 
     USERS {
         uuid user_id PK
         string username UK
-        string password_hash
+        string phone_number UK
+        string email
+        string keycloak_user_id UK
+        string pin_hash
         string full_name
         uuid role_id FK
         uuid branch_id FK
         boolean is_active
-        boolean is_account_deleted
-        timestamp account_deleted_at
-        string account_deleted_reason
-        uuid deleted_by FK
+        boolean is_deleted
+        timestamp deleted_at
+        string deleted_by
+        string deletion_reason
         timestamp last_login
-        uuid created_by
+        int access_failed_count
+        timestamp lockout_end
         timestamp created_at
+        string created_by
         timestamp updated_at
+        string updated_by
     }
 ```
 
@@ -115,26 +124,36 @@ erDiagram
 
 ### نموذج البيانات العلائقي (Data Schema)
 
-#### 1. جدول المستخدمين (`users`)
-> **ملاحظة معمارية وتصحيح:** تم تصحيح الأخطاء الإملائية الواردة بالمخطط الأصلي (`uderId -> user_id`، `password_hasj -> password_hash`، `accoun_deleted_reasone -> account_deleted_reason`).
+#### 1. جدول المستخدمين والموظفين (`users`)
+> **ملاحظة معمارية وتكاملية:**
+> - **إدارة كلمات المرور:** يتم تفويضها بالكامل لخادم **Keycloak** (ADR-ID-001) لمنع تخزين كلمات المرور محلياً؛ حيث يربط الحقل `keycloak_user_id` سجل الموظف المحلي بمعرّف الـ `sub` في رمز الـ JWT الصادر من Keycloak.
+> - **تسجيل دخول نقاط البيع السريع (Fast POS Cashier Login):** يستخدم الكاشير `username` والرمز السري السريع `pin_hash` (4 إلى 6 أرقام مشفرة بـ PBKDF2/Argon2id) للدخول الفوري لشاشات الكاشير (ADR-ID-002).
+> - **الحماية من الهجمات والتخمين (Brute-Force Lockout):** حقول `access_failed_count` و `lockout_end` تضمن قفل الحساب مؤقتاً عند تكرار إدخال PIN خاطئ 3 مرات وإطلاق حدث أمني لمراجعة كاميرات الـ POS.
+> - **توافقية الحذف والتدقيق (BuildingBlocks Alignment):** تم توحيد أسماء أعمدة الحذف المنطقي والتدقيق لتطابق واجهات `ISoftDeletable` و `IAuditableEntity` لأتمتتها كلياً عبر `AuditSaveChangesInterceptor` و `GlobalQueryFilter`.
 
 | الحقل (Field) | النوع المقترح (.NET / PostgreSQL) | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
-| `user_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد الثابت للمستخدم |
-| `username` | `string` / `VARCHAR(50)` | **Unique**, Not Null | اسم الدخول الفريد للنظام |
-| `password_hash` | `string` / `VARCHAR(255)` | Not Null | القيمة المشفرة لكلمة المرور (Argon2id أو BCrypt) |
+| `user_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد الثابت للمستخدم محلياً |
+| `username` | `string` / `VARCHAR(50)` | **Unique**, Not Null | اسم الدخول الفريد للنظام ومحطات البيع |
+| `phone_number` | `string` / `VARCHAR(30)` | **Unique**, Not Null | رقم هاتف الموظف (إلزامي للإشعارات وتأمين الحساب) |
+| `email` | `string?` / `VARCHAR(100)` | Nullable | البريد الإلكتروني للموظف (اختياري للتقارير) |
+| `keycloak_user_id` | `string` / `VARCHAR(100)` | **Unique**, Not Null | معرّف المستخدم في Keycloak (`sub` claim) |
+| `pin_hash` | `string?` / `VARCHAR(255)` | Nullable | القيمة المشفرة للرمز السري السريع للكاشير (PIN) |
 | `full_name` | `string` / `VARCHAR(100)` | Not Null | الاسم الكامل للموظف |
 | `role_id` | `Guid` / `UUID` | **FK -> roles(role_id)**, Not Null | الدور الوظيفي للموظف في النظام |
 | `branch_id` | `Guid` / `UUID` | **FK -> branches(branch_id)**, Nullable | الفرع المنتسب له الموظف (Nullable للمسؤول العام) |
-| `is_active` | `bool` / `BOOLEAN` | Not Null, Default: `true` | حالة تنشيط الحساب للعمليات اليومية |
-| `is_account_deleted` | `bool` / `BOOLEAN` | Not Null, Default: `false` | مؤشر الحذف المنطقي (Soft Delete) لمنع كسر السجلات القديمة |
-| `account_deleted_at` | `DateTime?` / `TIMESTAMPTZ` | Nullable | تاريخ ووقت تنفيذ الحذف المنطقي |
-| `account_deleted_reason` | `string?` / `VARCHAR(255)` | Nullable | سبب الحذف أو إنهاء الخدمة |
-| `deleted_by` | `Guid?` / `UUID` | **FK -> users(user_id)**, Nullable | المستخدم الذي نفذ عملية الحذف |
-| `last_login` | `DateTime?` / `TIMESTAMPTZ` | Nullable | آخر وقت تسجيل دخول ناجح |
-| `created_by` | `Guid?` / `UUID` | Nullable | المستخدم المسؤول عن إنشاء الحساب |
-| `created_at` | `DateTime` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت إنشاء السجل |
-| `updated_at` | `DateTime?` / `TIMESTAMPTZ` | Nullable | وقت آخر تحديث لبيانات الحساب |
+| `is_active` | `bool` / `BOOLEAN` | Not Null, Default: `true` | حالة تنشيط الحساب للعمليات التشغيلية (`IActivatable`) |
+| `is_deleted` | `bool` / `BOOLEAN` | Not Null, Default: `false` | مؤشر الحذف المنطقي (`ISoftDeletable`) مفلتر تلقائياً |
+| `deleted_at` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | تاريخ ووقت تنفيذ الحذف المنطقي |
+| `deleted_by` | `string?` / `VARCHAR(100)` | Nullable | هوية المستخدم المنفذ للحذف المسجلة من الـ Token |
+| `deletion_reason` | `string?` / `VARCHAR(255)` | Nullable | سبب الحذف المنطقي أو إنهاء الخدمة |
+| `last_login` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | آخر وقت تسجيل دخول ناجح |
+| `access_failed_count`| `int` / `INTEGER` | Not Null, Default: `0` | عداد المحاولات الفاشلة لإدخال الـ PIN للحماية من التخمين |
+| `lockout_end` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | تاريخ ووقت انتهاء الحظر المؤقت بعد تجاوز 3 محاولات خاطئة |
+| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت إنشاء السجل (`IAuditableEntity`) |
+| `created_by` | `string?` / `VARCHAR(100)` | Nullable | هوية منشئ الحساب المسجلة آلياً |
+| `updated_at` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | وقت آخر تحديث لبيانات الحساب |
+| `updated_by` | `string?` / `VARCHAR(100)` | Nullable | هوية آخر من قام بالتعديل |
 
 #### 2. جدول الأدوار (`roles`)
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
@@ -143,33 +162,37 @@ erDiagram
 | `role_name` | `string` / `VARCHAR(50)` | **Unique**, Not Null | اسم الدور (SystemAdmin, StoreManager, Cashier, etc.) |
 | `description` | `string?` / `VARCHAR(255)` | Nullable | شرح وظيفي لمسؤوليات الدور |
 | `is_role_active` | `bool` / `BOOLEAN` | Not Null, Default: `true` | تفعيل أو تعطيل الدور كلياً |
-| `created_at` | `DateTime` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت إنشاء السجل |
-| `updated_at` | `DateTime?` / `TIMESTAMPTZ` | Nullable | وقت آخر تعديل |
+| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت إنشاء السجل |
+| `created_by` | `string?` / `VARCHAR(100)` | Nullable | هوية منشئ السجل |
+| `updated_at` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | وقت آخر تعديل |
+| `updated_by` | `string?` / `VARCHAR(100)` | Nullable | هوية آخر معدل |
 
 #### 3. جدول الصلاحيات (`permissions`)
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
 | `permission_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد للصلاحية |
-| `resource` | `string` / `VARCHAR(50)` | Not Null | المورد المعني (Users, Roles, Branches, Sales, Inventory) |
-| `action` | `string` / `VARCHAR(50)` | Not Null | العملية المسموحة (Create, Read, Update, Delete, Approve, Export) |
-| `scope` | `string` / `VARCHAR(50)` | Not Null | نطاق التأثير (SystemWide, BranchOnly, Self) |
+| `resource` | `string` / `VARCHAR(50)` | Not Null | المورد المعني (shifts, sales, inventory, branches, etc.) |
+| `action` | `string` / `VARCHAR(50)` | Not Null | العملية المسموحة (create, read, update, delete, open, close, override) |
+| `scope` | `string` / `VARCHAR(50)` | Not Null | نطاق التأثير (own, branch, all) |
 | `category` | `string` / `VARCHAR(50)` | Not Null | تصنيف الصلاحية (Security, Sales, Inventory, Finance) |
-| `created_at` | `DateTime` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت التسجيل |
+| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت التسجيل |
+| *Natural Key Index*| `INDEX` | **Unique(resource, action, scope)** | ضمان منع تكرار نفس الصلاحية قطيعاً |
 
 #### 4. جدول ربط الأدوار بالصلاحيات (`role_permissions`)
+> **ملاحظة معمارية للمفتاح الأساسي (Composite Primary Key):**
+> تم اعتماد المفتاح المركب `(role_id, permission_id)` كمفتاح أساسي وحيد للجدول وإلغاء المعرف البديل الزائد (`role_perm_id`)؛ لتقليل حجم الفهارس واستهلاك الذاكرة بنسبة 50% وضمان ترتيب البيانات فيزيائياً في الـ Clustered Index.
+
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
-| `role_perm_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد لسجل الربط |
-| `role_id` | `Guid` / `UUID` | **FK -> roles(role_id)**, Not Null | الدور الوظيفي |
-| `permission_id` | `Guid` / `UUID` | **FK -> permissions(permission_id)**, Not Null | الصلاحية الممنوحة |
-| `created_at` | `DateTime` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | تاريخ المنح |
-| *Composite Index* | `INDEX` | **Unique(role_id, permission_id)** | ضمان عدم تكرار الصلاحية لنفس الدور |
+| `role_id` | `Guid` / `UUID` | **PK**, **FK -> roles(role_id)**, Not Null | الدور الوظيفي |
+| `permission_id` | `Guid` / `UUID` | **PK**, **FK -> permissions(permission_id)**, Not Null | الصلاحية الممنوحة للدور |
+| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | تاريخ منح الصلاحية |
 
 #### 5. جدول الفروع (`branches`)
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
 | `branch_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد للفرع |
-| `branch_name` | `string` / `VARCHAR(100)` | Not Null | اسم الفرع |
+| `branch_name` | `string` / `VARCHAR(100)` | Not Null | اسم الفرع التجاري |
 | `branch_code` | `string` / `VARCHAR(20)` | **Unique**, Not Null | كود كودي مميز للفرع (مثل: BR-01) |
 | `address` | `string` / `VARCHAR(255)` | Not Null | العنوان التفصيلي |
 | `city` | `string` / `VARCHAR(50)` | Not Null | المدينة |
@@ -178,9 +201,11 @@ erDiagram
 | `email` | `string` / `VARCHAR(100)` | Nullable | البريد الإلكتروني للفرع |
 | `tax_number` | `string` / `VARCHAR(50)` | Not Null | الرقم الضريبي المعتمد للفرع في الفواتير |
 | `currency` | `string` / `VARCHAR(10)` | Not Null, Default: `SAR` | العملة المعتمدة للفرع |
-| `is_active` | `bool` / `BOOLEAN` | Not Null, Default: `true` | تفعيل أو إيقاف عمليات الفرع |
-| `created_at` | `DateTime` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت التسجيل |
-| `updated_at` | `DateTime?` / `TIMESTAMPTZ` | Nullable | وقت آخر تحديث |
+| `is_active` | `bool` / `BOOLEAN` | Not Null, Default: `true` | تفعيل أو إيقاف عمليات الفرع (`IActivatable`) |
+| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت التسجيل (`IAuditableEntity`) |
+| `created_by` | `string?` / `VARCHAR(100)` | Nullable | هوية منشئ الفرع |
+| `updated_at` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | وقت آخر تحديث للفرع |
+| `updated_by` | `string?` / `VARCHAR(100)` | Nullable | هوية آخر معدل |
 
 #### 6. جدول ساعات عمل الفروع (`branch_operating_hours`)
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
@@ -190,6 +215,7 @@ erDiagram
 | `day_of_week` | `short` / `SMALLINT` | Not Null, Range: `0-6` | يوم الأسبوع (0 = الأحد، 6 = السبت) |
 | `open_time` | `TimeOnly` / `TIME` | Not Null | وقت بداية العمل الرسمي |
 | `close_time` | `TimeOnly` / `TIME` | Not Null | وقت انتهاء العمل الرسمي |
+| *Schedule Uniqueness* | `INDEX` | **Unique(branch_id, day_of_week)** | منع تكرار تسجيل ساعات العمل لنفس اليوم بالفرع |
 
 ---
 
@@ -483,13 +509,15 @@ flowchart TD
 * **المشكلة:** في مخطط الـ ERD الكلي، تظهر علاقات ربط بين `stock_movements` وكل من `users` و `branches` و `products`.
 * **الحل المعماري:** داخل قاعدة بيانات كل خدمة مستقلة (مثل `identity_db`) لا ننشئ قيد مفتاح أجنبي مادي في قاعدة البيانات (Database Hard FK) نحو جداول في خدمات أخرى (مثل جداول المنتجات في `catalog_db`). بدلاً من ذلك، نستخدم **Logical UUID References**، ويتم التحقق عبر الـ API / Domain Events لضمان استقلالية قواعد البيانات ومبدأ **Database-per-Service**.
 
-### 3. استراتيجية تشفير وأمان كلمات المرور (Password Security)
-* يجب عدم تخزين أي كلمات مرور بنصوص واضحة.
-* استخدام خوارزمية **Argon2id** أو **PBKDF2** المدمجة في ASP.NET Core Identity مع تطبيق معايير تعقيد لكلمة المرور (Upper, Lower, Digit, Special, Min 8 chars).
+### 3. استراتيجية المصادقة وحماية الـ PIN وربط Keycloak (AuthN Boundaries & PIN Security)
+* **إدارة كلمات المرور الرسمية:** يتم تفويضها بالكامل لـ Keycloak Realm (`supermarket`) وفق معيار OAuth 2.0 / OIDC، ولا يتم تخزين أي كلمات مرور في `identity_db`.
+* **الربط مع الحساب المركزي:** يتم تخزين معرّف Keycloak الفريد (`sub` claim) في حقل `keycloak_user_id` بربط فريد ومباشر.
+* **الرمز السري السريع للكاشير (POS Quick PIN):** يتم تخزين الـ Hash فقط في حقل `pin_hash` مشفراً بخوارزمية **PBKDF2 / Argon2id** لمنع اختراق الرمز حتى في حال تسريب قاعدة البيانات، مما يتيح تسجيل دخول فوري للكاشير دون متصفح.
 
-### 4. استراتيجية الحذف المنطقي وسجل المراجعة (Soft Deletion & Audit Trail)
-* دعم الـ Global Query Filters في Entity Framework Core بحيث لا يتم استرجاع الحسابات المحذوفة منطقياً (`is_account_deleted == true`) في الاستعلامات العادية تلقائياً.
-* الحفاظ على حقول المراجعة (`created_by`, `created_at`, `deleted_by`, `account_deleted_at`) لضمان تتبع المسؤولية القانونية والأمنية عن كل حساب.
+### 4. استراتيجية الحذف المنطقي والتدقيق الآلي (Soft Deletion & Automated Audit Trail)
+* **التوافق التام مع BuildingBlocks:** توحيد مسميات حقول الحذف والتدقيق لتطابق واجهات `ISoftDeletable` (`is_deleted`, `deleted_at`, `deleted_by`) و `IAuditableEntity` (`created_at`, `created_by`, `updated_at`, `updated_by`).
+* **الأتمتة الشاملة بدون تدخل بشري:** تفعيل `AuditSaveChangesInterceptor` لملء التواريخ واسم المستخدم من الـ JWT آلياً وتحويل أوامر الـ SQL `DELETE` إلى Soft Delete، مع حماية سجلات الإنشاء من التعديل (Immutability).
+* **الحماية من تسريب البيانات:** تطبيق `ModelBuilderExtensions.ApplySoftDeleteQueryFilter` لمنع ظهور السجلات المحذوفة في أي استعلام استرجاعي افتراضياً.
 
 ---
 

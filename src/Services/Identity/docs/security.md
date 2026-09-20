@@ -42,7 +42,7 @@ services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 | التهديد الأمني | وصف الخطر في السوبرماركت | آلية الحماية المطبقة في النظام |
 |---|---|---|
-| **Brute-Force PIN Attack** | محاولة تخمين الرمز السري للكاشير (4 أرقام) على شاشة البيع. | قفل الشاشة مؤقتاً لمدة 5 دقائق بعد 5 محاولات فاشلة متتالية، وإرسال تنبيه فوري للمشرف. |
+| **Brute-Force PIN Attack** | محاولة تخمين الرمز السري للكاشير (4 أرقام) على شاشة البيع. | قفل الحساب مؤقتاً لمدة 15 دقيقة بعد 3 محاولات فاشلة متتالية (`access_failed_count >= 3`)، وإطلاق حدث `UserLockedOutDomainEvent` بالثانية الدقيقة لمطابقة تسجيلات كاميرات المراقبة (CCTV Sync). |
 | **Rogue POS Terminal** | توصيل لابتوب أو جهاز خارجي بشبكة الفرع وتسجيل مبيعات وهمية. | فحص بصمة العتاد (`DeviceFingerprint` / MAC Address) ورفض أي طلب قادم من جهاز غير مسجل كـ `POSRegister`. |
 | **Cash Drawer Theft** | فتح درج الكاشير بدون عملية بيع وسرقة النقدية. | منع أمر `No-Sale Drawer Kick` إلا بصلاحية المشرف (`POS.Drawer.KickNoSale`) وتوثيقه في `AuditLogService`. |
 | **Unauthorized Void/Discount** | إلغاء صنف بعد استلام النقدية من العميل لاختلاس المبلغ. | إيقاف العملية وإلزام شاشة الـ POS بطلب موافقة المشرف (Supervisor Override Token) قبل قبول الإلغاء. |

@@ -26,18 +26,18 @@
 
 ### 1. طبقة الـ Domain (`SuperMarket.Identity.Domain`)
 * **الكيانات وجذور التجميع (Aggregates & Entities):**
-  * `Branch`: جذر تجميع الفرع (يحتوي على `Id`, `BranchCode`, `Name`, `Address`, `PhoneNumber`, `ManagerId`, `Status`).
-  * `POSRegister`: جذر تجميع جهاز ونقطة البيع (يحتوي على `Id`, `RegisterNumber`, `BranchId`, `DeviceFingerprint`, `Status`, `LastActiveAt`).
-  * `StaffMember`: جذر تجميع الموظف (يحتوي على `Id`, `KeycloakUserId`, `EmployeeCode`, `FullName`, `Email`, `PhoneNumber`, `BranchId`, `Role`, `PinHash`, `Status`).
-* **كائنات القيمة (Value Objects):**
-  * `BranchCode`, `RegisterNumber`, `PinHash`, `PhoneNumber`.
-* **الحالات والخيارات (Enums):**
-  * `BranchStatus` (`Active`, `UnderMaintenance`, `Decommissioned`).
-  * `RegisterStatus` (`Ready`, `ActiveShift`, `Disabled`).
-  * `StaffRole` (`Cashier`, `Supervisor`, `BranchManager`, `InventoryManager`, `Admin`).
-  * `StaffStatus` (`Active`, `Suspended`, `Terminated`).
-* **أحداث المجال (Domain Events):**
-  * `BranchCreatedDomainEvent`, `POSRegisterRegisteredDomainEvent`, `StaffCreatedDomainEvent`, `StaffTransferredDomainEvent`.
+  * `User` (Aggregate Root): يمثل الموظف والمستخدم (`Username`, `PhoneNumber`, `Email`, `KeycloakUserId`, `PinHash`, `FullName`, `RoleId`, `BranchId`, `AccessFailedCount`, `LockoutEnd`, `LastLogin`).
+  * `Role` (Entity): الأدوار الوظيفية الستة في السوبرماركت (`RoleName`, `Description`, `IsRoleActive`).
+  * `Permission` (Entity): الصلاحيات الدقيقة بنمط `resource:action:scope` مع قيد فريد مركب.
+  * `RolePermission` (Join Entity): جدول الربط بمفتاح مركب طبيعي `(RoleId, PermissionId)`.
+  * `Branch` (Aggregate Root): الفرع التجاري وبياناته التشغيلية والضريبية.
+  * `BranchOperatingHours` (Child Entity): ساعات العمل اليومية لكل فرع مع قيد فريد `(BranchId, DayOfWeek)`.
+* **أحداث المجال المطبقة (Domain Events):**
+  * `UserCreatedDomainEvent`: يُطلق عند تسجيل موظف جديد لتهيئة الحساب وإرسال رسالة ترحيبية بالبيانات والـ PIN.
+  * `UserDeactivatedDomainEvent`: يُطلق عند تجميد أو حذف الحساب لإلغاء الجلسات النشطة وطرد الكاشير من أجهزة البيع.
+  * `UserTransferredDomainEvent`: يُطلق عند نقل الموظف لفرع آخر لتحديث النطاق الجغرافي للصلاحيات.
+  * `UserRoleChangedDomainEvent`: يُطلق عند ترقية أو تعديل الدور لإلغاء وتحديث كاش الصلاحيات.
+  * `UserLockedOutDomainEvent`: يُطلق عند تكرار إدخال PIN خاطئ 3 مرات لقفل الحساب ومطابقة الكاميرات (CCTV Sync).
 
 ---
 
