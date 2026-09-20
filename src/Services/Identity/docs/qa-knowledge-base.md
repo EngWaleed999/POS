@@ -552,4 +552,197 @@ public static IResult ToProblemDetails(this Result result)
 3. **القاعدة الذهبية:**
    > **"استخدم DDD لحماية أموال وبزنس المنصة حيث توجد قواعد معقدة، وتجنبه في العمليات البسيطة لتحافظ على بساطة الكود ومقروئيته لأي مهندس."**
 
+---
+
+## 12. كيف نحمي التغليف (Encapsulation) عند تطبيق واجهات القدرات (`ISoftDeletable`, `IAuditableEntity`) دون فتح الـ Setters للعامة؟ وما هو الـ Explicit Interface Implementation؟
+
+### ❓ السؤال:
+> *"عندما يرث الكيان واجهات مثل `ISoftDeletable` أو `IAuditableEntity` التي تتطلب خاصية قابلة للتعديل `{ get; set; }`، كيف نمنع أي مطور من كتابة `user.IsDeleted = true` أو تعديل تاريخ الإنشاء يدوياً متجاوزاً دوال البزنس، مع ضمان أن مراقب EF Core يعمل بنجاح؟"*
+
+### 💡 الإجابة المعمارية المفصلة:
+
+#### أولاً: معضلة تسريب التغليف (The Encapsulation Leak Trap):
+* عند إنشاء واجهة مثل:
+  ```csharp
+  public interface ISoftDeletable
+  {
+      bool IsDeleted { get; set; }
+      DateTime? DeletedAt { get; set; }
+  }
+  ```
+* إذا قمنا بتطبيقها بالطريقة التقليدية داخل الكيان:
+  ```csharp
+  public class User : AggregateRoot<Guid>, ISoftDeletable
+  {
+      public bool IsDeleted { get; set; } // ❌ تسريب فادح للتغليف!
+  }
+  ```
+  هنا يستطيع أي مطور في أي Handler أن يكتب `user.IsDeleted = true;` ويتجاوز دالة `Deactivate()`، فلا يُطلق حدث الدومين، ولا يُسجل سبب الإلغاء، وتفشل قواعد البزنس!
+
+#### ثانياً: الحل المعماري عبر التطبيق الصريح للواجهة (Explicit Interface Implementation):
+نقسم الرؤية في C# إلى مستويين:
+1. **الواجهة العامة للمطورين (Public Surface):** تكون للقراءة فقط مع `private set`:
+   ```csharp
+   public bool IsDeleted { get; private set; }
+   public DateTime? DeletedAt { get; private set; }
+   ```
+2. **التطبيق الصريح الخفي للواجهة (Explicit Implementation):**
+   ```csharp
+   bool ISoftDeletable.IsDeleted
+   {
+       get => IsDeleted;
+       set => IsDeleted = value;
+   }
+
+   DateTime? ISoftDeletable.DeletedAt
+   {
+       get => DeletedAt;
+       set => DeletedAt = value;
+   }
+   ```
+
+#### ثالثاً: كيف تعمل هذه الخدعة الهندسية؟
+* **للمطور العادي:** إذا كتب المطور:
+  ```csharp
+  var user = GetUser();
+  user.IsDeleted = true; // ❌ خطأ ترجمة فوري (Compiler Error): The property cannot be assigned to -- it is read-only!
+  ```
+  المترجم يمنعه تماماً ويجبره على استخدام دالة البزنس الرسمية: `user.Deactivate()`.
+* **لمراقب EF Core (`AuditSaveChangesInterceptor`):**
+  المراقب يفحص الكيان عبر تحويل النوع (Casting):
+  ```csharp
+  if (entry.Entity is ISoftDeletable softDeletable && entry.State == EntityState.Deleted)
+  {
+      entry.State = EntityState.Modified;
+      softDeletable.IsDeleted = true; // ✅ مسموح تماماً لأن التعامل يتم عبر الواجهة مباشرة!
+      softDeletable.DeletedAt = DateTime.UtcNow;
+  }
+  ```
+**النتيجة:** حماية التغليف بنسبة 100% مع أتمتة كاملة للـ Infrastructure دون أي تعارض!
+
+---
+
+## 13. كيف تنطلق أحداث الدومين (`Domain Events`) دون أن تعرف طبقة الدومين أي شيء عن MediatR أو RabbitMQ؟ وما الفرق بين أحداث الدومين وأحداث التكامل؟
+
+### ❓ السؤال:
+> *"لماذا لا نطلق MediatR أو ننشر عبر RabbitMQ مباشرة من داخل دالة `User.Create` أو `User.Deactivate`؟ وكيف يتم النشر الفعلي في وقت الحفظ؟ وما الفرق الجوهري بين Domain Event و Integration Event؟"*
+
+### 💡 الإجابة المعمارية المفصلة:
+
+#### أولاً: لماذا يُمنع منعاً باتاً استدعاء MediatR أو RabbitMQ من داخل الكيان؟
+1. **انتهاك مبدأ انعكاس التبعية (DIP) و Pure Domain:** طبقة الـ Domain يجب أن تكون معزولة وخالية من أي تبعيات خارجية (Third-party libraries / Infrastructure).
+2. **خطر الـ Side Effects قبل تأكيد الحفظ (Transaction Rollback):**
+   * لو أطلق الكيان رسالة إلى RabbitMQ داخل `User.Create`، ثم فشل حفظ المعاملة في PostgreSQL بسبب Database Deadlock أو Unique Constraint Violation:
+   * ستصل الرسالة لخدمة الرسائل النصية SMS وتُرسل رسالة ترحيبية و PIN لموظف لم يُحفظ حسابه أصلاً في قاعدة البيانات!
+3. **صعوبة الاختبار (Testability):** جعل الكيان يعتمد على خدمات خارجية يجعل كتابة Unit Tests نقية أمراً معقداً يتطلب Mocking مكثف.
+
+#### ثانياً: المعمارية الصحيحة (Internal Collection Pattern):
+1. **تسجيل الحدث محلياً داخل الكيان:**
+   يمتلك الكيان قائمة داخلية خاصة عبر `AggregateRoot<TId>`:
+   ```csharp
+   private readonly List<IDomainEvent> _domainEvents = new();
+   public IReadOnlyCollection<IDomainEvent> DomainEvents => _domainEvents.AsReadOnly();
+   
+   protected void AddDomainEvent(IDomainEvent domainEvent) => _domainEvents.Add(domainEvent);
+   ```
+   عند إنشاء الكيان، يسجل حدثه محلياً في الذاكرة فقط:
+   ```csharp
+   user.AddDomainEvent(new UserCreatedDomainEvent(...));
+   ```
+2. **التفريغ والنشر التلقائي عبر مراقب EF Core (`DispatchDomainEventsInterceptor`):**
+   عندما تستدعي طبقة التطبيق `await dbContext.SaveChangesAsync()`:
+   * يقوم الـ Interceptor باستخراج جميع الكيانات التي تحتوي على أحداث (`DomainEvents.Any()`).
+   * يفرغ الأحداث وينشرها محلياً في نفس الـ In-Process عبر MediatR (`_publisher.Publish(domainEvent)`).
+   * يتم ذلك **داخل نفس معاملة قاعدة البيانات (Database Transaction)**.
+
+#### ثالثاً: الفرق الجوهري بين أحداث الدومين وأحداث التكامل:
+
+| وجه المقارنة | أحداث الدومين (Domain Events) | أحداث التكامل (Integration Events) |
+|---|---|---|
+| **النطاق (Scope)** | محلي داخل نفس الخدمة وميكروسيرفيس الهوية (In-Process). | موزع عبر عدة خدمات مستقلة (Cross-Service / Distributed). |
+| **وسيط النقل (Transport)** | في الذاكرة (In-Memory عبر MediatR `INotification`). | عبر ناقل الرسائل (Message Broker مثل RabbitMQ). |
+| **المعاملة (Transaction)** | تشارك نفس الـ DbTransaction لمعالجة التأثيرات الجانبية المحلية. | غير متزامنة ومفصولة وتعتمد على **Eventual Consistency**. |
+| **الموثوقية (Reliability)** | مضمنة في الـ Commit لقاعدة البيانات. | محمية بنمط **Transactional Outbox Pattern** لمنع الفقدان. |
+
+---
+
+## 14. كيف يحمي نظام قفل الحسابات (`Account Lockout`) نقاط البيع ضد التخمين الداخلي للـ PIN، وكيف يتزامن مع كاميرات المراقبة (CCTV)؟
+
+### ❓ السؤال:
+> *"الكاشير في السوبرماركت يستخدم رمزا سريا سريعا (PIN) مكونا من 4 أرقام لتسهيل الدخول. ألا يسهل على زملائه تخمينه؟ وكيف صممنا حماية الكيان لتسجيل الحظر ومطابقته جنائياً مع كاميرات المراقبة؟"*
+
+### 💡 الإجابة المعمارية المفصلة:
+
+#### أولاً: طبيعة التهديد الأمني (The Insider Threat in Retail POS):
+* في أوقات تبديل الورديات أو ذهاب الكاشير للاستراحة، قد يحاول موظف آخر فتح شاشة البيع برمز زميله لتمرير بضائع لأصدقائه أو سرقة الصندوق النقدي ونسبة العجز للزميل الغائب.
+* بما أن الـ PIN يتكون من 4 أرقام فقط (من 0000 إلى 9999)، فإن احتمال تخمينه وارد جداً إذا تُرِك عدد المحاولات مفتوحاً.
+
+#### ثانياً: سياسة القفل الذكية داخل كيان `User`:
+1. **العداد وحالة القفل:**
+   أضفنا حقلي `AccessFailedCount` و `LockoutEnd` كأعمدة رسمية محمية بـ Encapsulation:
+   ```csharp
+   public int AccessFailedCount { get; private set; }
+   public DateTime? LockoutEnd { get; private set; }
+   ```
+2. **دورة حياة المحاولة الفاشلة (`RecordFailedLogin`):**
+   * في كل محاولة PIN خاطئة، يزداد العداد بمقدار 1.
+   * **إذا وصل العداد إلى 3 محاولات متتالية:**
+     - يتم قفل الحساب فوراً لمدة **15 دقيقة** (`LockoutEnd = DateTime.UtcNow.AddMinutes(15)`).
+     - يُطلق الكيان حدثاً أمنياً رفيع المستوى: `UserLockedOutDomainEvent`.
+3. **تصفير العداد عند النجاح (`RecordLogin`):**
+   * عند إدخال الـ PIN الصحيح، يُصفر العداد فوراً ويُحدث تاريخ آخر دخول (`LastLogin`).
+4. **فك الحظر الاستثنائي للمشرف (`Unlock`):**
+   * في حال كان القفل ناتجاً عن نسيان الكاشير، يستطيع المشرف أو مدير الفرع فك الحظر يدوياً عبر دالة `Unlock()`.
+
+#### ثالثاً: الربط الجنائي مع كاميرات المراقبة (CCTV Timestamp Synchronization):
+* يحمل الحدث `UserLockedOutDomainEvent` الخصائص التالية:
+  `Guid UserId, string Username, DateTime LockedOutAtUtc, int FailedAttempts`
+* **كيف تستفيد الإدارة منه؟**
+  عند انطلاق هذا الحدث، يُسجل في الـ Security Audit Log بتوقيت UTC بالثانية الدقيقة. وعند حدوث شبهة احتيال، يفتح فريق الأمن تسجيلات الكاميرا الموجهة نحو محطة البيع المحددة في تلك الثانية بالضبط؛ فيظهر وجه الموظف الذي كان يقف أمام الشاشة ويحاول تخمين الرمز!
+
+---
+
+## 15. هل استخدام `if (string.IsNullOrWhiteSpace(...))` في Factory Methods يعتبر Best Practice؟ وما هي ثغرات الـ Error Ping-Pong والـ Primitive Obsession، وكيف نحلها عبر الـ Two-Tier Validation؟
+
+### ❓ السؤال:
+> *"هل الاعتماد الحصري على `if (string.IsNullOrWhiteSpace(...))` و `Contains('@')` في دوال إنشاء الكيانات (مثل `User.Create`) يمثل أفضل الممارسات البرمجية؟ ألا يفتح ثغرات أمنية وتجربة مستخدم سيئة؟ وما هو التصميم المعماري المثالي لمعالجة هذه المعضلة؟"*
+
+### 💡 الإجابة المعمارية المفصلة:
+
+#### أولاً: العيوب الهندسية والثغرات في الفحص السطحي المتسلسل:
+1. **ظاهرة "Error Ping-Pong" (تجربة مستخدم كارثية):**
+   عندما يقوم الكود بالخروج عند أول خطأ (Fail-Fast Short-Circuiting):
+   لو أرسلت شاشة الـ HR أو الـ IT استمارة بها 3 حقول فارغة، سيعود النظام بخطأ الحقل الأول فقط. وبعد تصحيحه يظهر خطأ الحقل الثاني، وهكذا دواليك. واجهات المستخدم المعاصرة تتوقع استلام قائمة الأخطاء كاملة دفعة واحدة.
+2. **فحص الإيميل الساذج (Naive Email Validation):**
+   الشرط `!sanitizedEmail.Contains('@') || !sanitizedEmail.Contains('.')` يمرر نصوصاً مشوهة مثل `"@."` أو `"a@."` أو إيميلات تحتوي على محارف تحكم ومحاولات حقن خطيرة.
+3. **فحص الهاتف الساذج (Naive Phone Number Check):**
+   فحص `IsNullOrWhiteSpace` يسمح بمرور `"abc"` أو نصوص غير رقمية؛ وعندما تحاول خدمة الإشعارات إرسال SMS بالـ PIN عبر الـ Gateway ستنهار العملية أو تفشل بصمت.
+4. **هوس الأنواع البدائية (Primitive Obsession) وخلط المسؤوليات:**
+   الكيان لا ينبغي أن يتورط في تفاصيل تطهير المحارف وفحص صيغ الـ Regex، بل مسؤوليته حماية قواعد البزنس.
+
+#### ثانياً: الحل الهندسي المعتمد — التحقق ثنائي الطبقات (Two-Tier Validation Pattern):
+نقسم التحقق إلى مسؤوليتين منفصلتين:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 1. Application Layer (FluentValidation Pipeline Behavior)                   │
+│    - يفحص بنية الطلب بالكامل (Syntactic & Structural Validation).           │
+│    - يفحص الـ Regex المعقد للهاتف (E.164) والإيميل (RFC Standard).          │
+│    - يجمع كل الأخطاء دفعة واحدة ويعيد 400 Bad Request (RFC 7807).          │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ تم الفحص بنجاح
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 2. Domain Layer (Entity Guard Clauses & Invariants)                         │
+│    - حراسة دفاعية صلبة وخفيفة (Last Line of Defense).                       │
+│    - تمنع وجود كائن في الذاكرة بحالة مكسورة حتى عند الاستدعاء من Seeding/Test.│
+│    - تفحص القواعد الدلالية للبزنس (Semantic Business Rules).                │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### ثالثاً: المقارنة مع خيار كائنات القيمة (Value Objects):
+* يمكن تدعيم المستوى الثاني بإنشاء Value Objects نقية مثل `Email` و `PhoneNumber`.
+* **المفاضلة:** كائنات القيمة توفر نقاءً دومينياً فائقاً ولكنها تتطلب ضبط `HasConversion` أو `OwnsOne` في EF Core. الجمع بين FluentValidation في طبقة التطبيق والحراسة الدفاعية في الدومين يمثل التوازن الهندسي الأكثر عملية ومرونة في أنظمة الـ Enterprise الحقيقية.
+
+
 

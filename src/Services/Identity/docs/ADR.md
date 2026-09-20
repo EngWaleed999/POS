@@ -2,6 +2,26 @@
 
 توثق هذه الصفحة القرارات الهندسية الجوهرية لخدمة `SuperMarket.Identity` وفق معيار **ADR** العالمي:
 
+### 📑 فهرس القرارات المعمارية المعتمدة (ADR Index)
+
+| المعرف (ID) | عنوان القرار (Decision Title) | الحالة (Status) | التأثير المعماري (Architectural Impact) |
+|---|---|---|---|
+| **ADR-ID-001** | [اعتماد Keycloak كمزود هوية مركزي](#-adr-id-001-اعتماد-keycloak-كمزود-هوية-مركزي-central-identity-provider) | مُعتمد (Approved) | تفويض الـ AuthN لمعيار عالمي وإلغاء الحاجة لبناء خادم هويات يدوي. |
+| **ADR-ID-002** | [نمط المصادقة السريعة للكاشير (Fast PIN Login)](#-adr-id-002-نمط-المصادقة-السريعة-للكاشير-fast-pos-pin-based-authentication) | مُعتمد (Approved) | تسجيل دخول في أقل من ثانية لشاشات الـ POS بدون واجهات متصفح. |
+| **ADR-ID-003** | [ربط جهاز الكاشير بالفرع والعتاد (Terminal Binding)](#-adr-id-003-ربط-جهاز-الكاشير-بالفرع-والعتاد-pos-terminal-hardware-binding) | مُعتمد (Approved) | منع تزوير العمليات وحصر كل نقطة بيع في مسارها المالي والفرعي. |
+| **ADR-ID-004** | [التحقق عديم الحالة من الـ Tokens عبر JWKS Caching](#-adr-id-004-التحقق-عديم-الحالة-من-الـ-tokens-عبر-jwks-caching) | مُعتمد (Approved) | فحص الـ Tokens محلياً في الذاكرة في زمن < 1ms بدون Network Calls. |
+| **ADR-ID-005** | [نمط موافقة المشرف اللحظية (Supervisor Override)](#-adr-id-005-نمط-موافقة-المشرف-اللحظية-supervisor-override-pattern) | مُعتمد (Approved) | توثيق حركات الإلغاء والخصم الاستثنائي دون مقاطعة جلسة الكاشير. |
+| **ADR-ID-006** | [تطبيق نمط صندوق الصادر (Transactional Outbox)](#-adr-id-006-تطبيق-نمط-صندوق-الصادر-transactional-outbox-pattern) | مُعتمد (Approved) | ضمان تسليم رسائل RabbitMQ ذرياً داخل نفس الـ Transaction. |
+| **ADR-ID-007** | [اعتماد نمط الـ Rich Domain Model والـ Encapsulation](#-adr-id-007-اعتماد-نمط-الـ-rich-domain-model-والـ-encapsulation) | مُعتمد (Approved) | حماية قواعد البزنس ومنع الحالات غير الصالحة في الذاكرة. |
+| **ADR-ID-008** | [معمارية الكيانات القائمة على واجهات القدرات و Pragmatic DDD](#-adr-id-008-معمارية-الكيانات-القائمة-على-واجهات-القدرات-capability-based-entity-architecture-وتطبيق-pragmatic-ddd) | مُعتمد (Approved) | استبدال الـ God Base Class بـ Traits دقيقة (`IAuditableEntity`, إلخ). |
+| **ADR-ID-009** | [حماية التغليف عبر التطبيق الصريح للواجهات (Explicit Interfaces)](#-adr-id-009-حماية-تغليف-واجهات-القدرات-عبر-التطبيق-الصريح-explicit-interface-implementation-for-capability-interfaces) | مُعتمد (Approved) | منع المطورين من تعديل `IsDeleted` يدوياً مع استمرار عمل Interceptors. |
+| **ADR-ID-010** | [الحظر الأمني الآلي بعد 3 محاولات فاشلة وتزامن CCTV](#-adr-id-010-منظومة-الحظر-الأمني-الآلي-بعد-تكرار-المحاولات-الفاشلة-automatic-account-lockout--security-alerting) | مُعتمد (Approved) | حماية الـ PIN من التخمين وتوثيق توقيت بالثانية لمطابقة كاميرات المراقبة. |
+| **ADR-ID-011** | [إلزامية رقم الهاتف واختيارية البريد الإلكتروني للعمالة](#-adr-id-011-إدارة-بيانات-الاتصال-وهوية-الكاشير-mandatory-phone-number--optional-email) | مُعتمد (Approved) | مطابقة واقع السوبرماركت لإرسال الـ PIN والتنبيهات عبر SMS. |
+| **ADR-ID-012** | [الفصل بين مصادقة الهوية وإدارة الورديات المرنة (Soft Shifts)](#-adr-id-012-الفصل-المعماري-بين-مصادقة-الهوية-وإدارة-الورديات-المرنة-soft-shift-scheduling-vs-auth-boundaries) | مُعتمد (Approved) | منع قفل الشاشة قسرياً بوجه العملاء في الطوابير وتفويض الوردية لـ Sales. |
+| **ADR-ID-013** | [اعتماد المفاتيح المركبة والقيود الفريدة لسلامة البيانات](#-adr-id-013-اعتماد-المفاتيح-المركبة-والقيود-الفريدة-لسلامة-البيانات-التصريحية-composite-keys--unique-constraints) | مُعتمد (Approved) | تسريع الاستعلامات ومنع Race Conditions على مستوى محرك PostgreSQL. |
+| **ADR-ID-014** | [فصل أحداث الدومين عن أحداث التكامل ونمط الـ Outbox](#-adr-id-014-معمارية-فصل-أحداث-الدومين-عن-أحداث-التكامل-ونمط-الـ-outbox-in-memory-domain-events-vs-distributed-integration-events) | مُعتمد (Approved) | حماية استقلالية الـ Domain ومبدأ DIP بربط Interceptor بـ MediatR. |
+| **ADR-ID-015** | [استراتيجية التحقق ذات المستويين (Two-Tier Validation)](#-adr-id-015-استراتيجية-التحقق-من-صحة-البيانات-ذات-المستويين-two-tier-validation-pipeline-fluentvalidation-vs-domain-invariants) | مُعتمد (Approved) | منع ظاهرة Error Ping-Pong بحصر فحص الصيغ في FluentValidation وحراسة الـ Domain. |
+
 ---
 
 ## 🏛️ ADR-ID-001: اعتماد Keycloak كمزود هوية مركزي (Central Identity Provider)
