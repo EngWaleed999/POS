@@ -151,13 +151,9 @@ public sealed class User : AggregateRoot<Guid>, IAuditableEntity, ISoftDeletable
         if (roleId == Guid.Empty)
             return Result.Failure<User>(UserErrors.EmptyRoleId);
 
-        string? sanitizedEmail = null;
-        if (!string.IsNullOrWhiteSpace(email))
-        {
-            sanitizedEmail = email.Trim().ToLowerInvariant();
-            if (!sanitizedEmail.Contains('@') || !sanitizedEmail.Contains('.'))
-                return Result.Failure<User>(UserErrors.InvalidEmail);
-        }
+        string? sanitizedEmail = string.IsNullOrWhiteSpace(email)
+            ? null
+            : email.Trim().ToLowerInvariant();
 
         var user = new User(
             id: Guid.NewGuid(),
@@ -225,13 +221,9 @@ public sealed class User : AggregateRoot<Guid>, IAuditableEntity, ISoftDeletable
         if (string.IsNullOrWhiteSpace(phoneNumber))
             return Result.Failure(UserErrors.EmptyPhoneNumber);
 
-        string? sanitizedEmail = null;
-        if (!string.IsNullOrWhiteSpace(email))
-        {
-            sanitizedEmail = email.Trim().ToLowerInvariant();
-            if (!sanitizedEmail.Contains('@') || !sanitizedEmail.Contains('.'))
-                return Result.Failure(UserErrors.InvalidEmail);
-        }
+        string? sanitizedEmail = string.IsNullOrWhiteSpace(email)
+            ? null
+            : email.Trim().ToLowerInvariant();
 
         PhoneNumber = phoneNumber.Trim();
         Email = sanitizedEmail;
