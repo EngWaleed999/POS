@@ -1,7 +1,8 @@
-using System.Reflection;
+// MediatR pipeline behavior that validates incoming commands/queries via FluentValidation.
+// On failure, throws ValidationException — the API Global Exception Handler maps it to RFC 7807 ValidationProblemDetails (HTTP 400).
+
 using FluentValidation;
 using MediatR;
-using SuperMarket.BuildingBlocks.Results;
 
 namespace SuperMarket.BuildingBlocks.Application;
 
@@ -9,7 +10,7 @@ public sealed class ValidationPipelineBehavior<TRequest, TResponse> : IPipelineB
     where TRequest : IRequest<TResponse>
 {
     // -------------------------------------------------------------------------
-    // Dependencies & Injected Services
+    // Dependencies
     // -------------------------------------------------------------------------
     private readonly IEnumerable<IValidator<TRequest>> _validators;
 
@@ -27,53 +28,21 @@ public sealed class ValidationPipelineBehavior<TRequest, TResponse> : IPipelineB
         CancellationToken cancellationToken)
     {
         if (!_validators.Any())
-        {
             return await next();
-        }
 
         var context = new ValidationContext<TRequest>(request);
 
         var validationResults = await Task.WhenAll(
-            _validators.Select(validator => validator.ValidateAsync(context, cancellationToken)));
+            _validators.Select(v => v.ValidateAsync(context, cancellationToken)));
 
         var failures = validationResults
             .SelectMany(r => r.Errors)
-            .Where(f => f != null)
+            .Where(f => f is not null)
             .ToList();
 
         if (failures.Count == 0)
-        {
             return await next();
-        }
 
-        var errorMessage = string.Join(" | ", failures.Select(f => $"{f.PropertyName}: {f.ErrorMessage}"));
-        var validationError = Error.Validation("General.Validation", errorMessage);
-
-        return CreateValidationResult(validationError);
-    }
-
-    // -------------------------------------------------------------------------
-    // Result Factory Helper (Builds Result or Result<T> on Failure)
-    // -------------------------------------------------------------------------
-    private static TResponse CreateValidationResult(Error error)
-    {
-        if (typeof(TResponse) == typeof(Result))
-        {
-            return (TResponse)(object)Result.Failure(error);
-        }
-
-        var resultType = typeof(TResponse);
-        if (resultType.IsGenericType && resultType.GetGenericTypeDefinition() == typeof(Result<>))
-        {
-            var valueType = resultType.GetGenericArguments()[0];
-            var failureMethod = typeof(Result)
-                .GetMethods(BindingFlags.Public | BindingFlags.Static)
-                .First(m => m.Name == nameof(Result.Failure) && m.IsGenericMethod && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(Error))
-                .MakeGenericMethod(valueType);
-
-            return (TResponse)failureMethod.Invoke(null, [error])!;
-        }
-
-        throw new InvalidOperationException($"The return type '{typeof(TResponse).Name}' is not a supported Result type in ValidationPipelineBehavior.");
+        throw new ValidationException(failures);
     }
 }
