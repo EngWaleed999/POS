@@ -40,8 +40,10 @@ erDiagram
     BRANCHES ||--o{ BRANCH_OPERATING_HOURS : "has"
     BRANCHES ||--o{ USERS : "assigned to"
     ROLES ||--o{ USERS : "assigned to"
-    ROLES ||--o{ ROLE_PERMISSIONS : "contains"
-    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "granted through"
+    ROLES ||--o{ ROLE_PERMISSION_GROUPS : "assigned to"
+    PERMISSION_GROUPS ||--o{ ROLE_PERMISSION_GROUPS : "grouped into"
+    PERMISSION_GROUPS ||--o{ PERMISSION_GROUP_ITEMS : "contains"
+    PERMISSIONS ||--o{ PERMISSION_GROUP_ITEMS : "included in"
 
     BRANCHES {
         uuid branch_id PK
@@ -80,19 +82,28 @@ erDiagram
         string updated_by
     }
 
+    PERMISSION_GROUPS {
+        uuid group_id PK
+        string group_name UK
+        string description
+    }
+
     PERMISSIONS {
         uuid permission_id PK
         string resource
         string action
         string scope
         string category
-        timestamp created_at
     }
 
-    ROLE_PERMISSIONS {
-        uuid role_id PK,FK
+    PERMISSION_GROUP_ITEMS {
+        uuid group_id PK,FK
         uuid permission_id PK,FK
-        timestamp created_at
+    }
+
+    ROLE_PERMISSION_GROUPS {
+        uuid role_id PK,FK
+        uuid group_id PK,FK
     }
 
     USERS {
@@ -175,20 +186,37 @@ erDiagram
 | `action` | `string` / `VARCHAR(50)` | Not Null | العملية المسموحة (create, read, update, delete, open, close, override) |
 | `scope` | `string` / `VARCHAR(50)` | Not Null | نطاق التأثير (own, branch, all) |
 | `category` | `string` / `VARCHAR(50)` | Not Null | تصنيف الصلاحية (Security, Sales, Inventory, Finance) |
-| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | وقت التسجيل |
 | *Natural Key Index*| `INDEX` | **Unique(resource, action, scope)** | ضمان منع تكرار نفس الصلاحية قطيعاً |
 
-#### 4. جدول ربط الأدوار بالصلاحيات (`role_permissions`)
-> **ملاحظة معمارية للمفتاح الأساسي (Composite Primary Key):**
-> تم اعتماد المفتاح المركب `(role_id, permission_id)` كمفتاح أساسي وحيد للجدول وإلغاء المعرف البديل الزائد (`role_perm_id`)؛ لتقليل حجم الفهارس واستهلاك الذاكرة بنسبة 50% وضمان ترتيب البيانات فيزيائياً في الـ Clustered Index.
+> **ملاحظة معمارية للصلاحيات (Pure Definition Entity):**
+> كيان الصلاحية هو تعريف ذري بحت (Immutable Definition)، لا يحتاج لأي واجهات تدقيق (`IAuditableEntity`) أو حقول زمنية (`created_at`)، ويتم إنشاؤه بحروف صغيرة (Lowercase) لضمان دقة المقارنة.
+
+#### 4. جدول مجموعات الصلاحيات (`permission_groups`)
+| الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
+| :--- | :--- | :--- | :--- |
+| `group_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد لمجموعة الصلاحيات |
+| `group_name` | `string` / `VARCHAR(100)` | **Unique**, Not Null | اسم المجموعة الوظيفية (مثل: Cashier Core Package) |
+| `description` | `string?` / `VARCHAR(255)` | Nullable | وصف تفصيلي للغرض الوظيفي للمجموعة |
+
+#### 5. جدول عناصر مجموعات الصلاحيات (`permission_group_items`)
+> **ملاحظة معمارية للمفتاح الأساسي المركب (Composite Primary Key):**
+> تم اعتماد المفتاح المركب `(group_id, permission_id)` كمفتاح أساسي وحيد للجدول بدون معرف بديل (No Surrogate Key)، وبدون أي حقول تدقيق (Pure Join Table). فك الصلاحية من المجموعة هو حذف فعلي (Hard Delete فقط).
 
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
-| `role_id` | `Guid` / `UUID` | **PK**, **FK -> roles(role_id)**, Not Null | الدور الوظيفي |
-| `permission_id` | `Guid` / `UUID` | **PK**, **FK -> permissions(permission_id)**, Not Null | الصلاحية الممنوحة للدور |
-| `created_at` | `DateTimeOffset` / `TIMESTAMPTZ` | Not Null, Default: `NOW()` | تاريخ منح الصلاحية |
+| `group_id` | `Guid` / `UUID` | **PK**, **FK -> permission_groups(group_id)**, Not Null | معرّف المجموعة الحاوية |
+| `permission_id` | `Guid` / `UUID` | **PK**, **FK -> permissions(permission_id)**, Not Null | معرّف الصلاحية المرتبطة |
 
-#### 5. جدول الفروع (`branches`)
+#### 6. جدول ربط الأدوار بمجموعات الصلاحيات (`role_permission_groups`)
+> **ملاحظة معمارية للمفتاح الأساسي المركب (Composite Primary Key):**
+> تم اعتماد المفتاح المركب `(role_id, group_id)` كمفتاح أساسي وحيد للجدول بدون معرف بديل (No Surrogate Key)، وبدون أي حقول تدقيق (Pure Join Table). سحب حزمة صلاحيات من دور هو حذف فعلي (Hard Delete فقط).
+
+| الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
+| :--- | :--- | :--- | :--- |
+| `role_id` | `Guid` / `UUID` | **PK**, **FK -> roles(role_id)**, Not Null | معرّف الدور الوظيفي |
+| `group_id` | `Guid` / `UUID` | **PK**, **FK -> permission_groups(group_id)**, Not Null | معرّف مجموعة الصلاحيات المسندة للدور |
+
+#### 7. جدول الفروع (`branches`)
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
 | `branch_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد للفرع |
@@ -207,7 +235,7 @@ erDiagram
 | `updated_at` | `DateTimeOffset?` / `TIMESTAMPTZ` | Nullable | وقت آخر تحديث للفرع |
 | `updated_by` | `string?` / `VARCHAR(100)` | Nullable | هوية آخر معدل |
 
-#### 6. جدول ساعات عمل الفروع (`branch_operating_hours`)
+#### 8. جدول ساعات عمل الفروع (`branch_operating_hours`)
 | الحقل (Field) | النوع المقترح | القيود (Constraints) | الوصف الهندسي |
 | :--- | :--- | :--- | :--- |
 | `hours_id` | `Guid` / `UUID` | **PK**, Not Null | المعرّف الفريد للسجل |
@@ -319,6 +347,7 @@ flowchart TD
     subgraph Identity_Context ["1. Identity & Organization Context"]
         T_Users[(users)]
         T_Roles[(roles)]
+        T_PermGroups[(permission_groups)]
         T_Perms[(permissions)]
         T_Branches[(branches)]
         T_Hours[(branch_operating_hours)]

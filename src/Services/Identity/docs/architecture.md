@@ -27,9 +27,11 @@
 ### 1. طبقة الـ Domain (`SuperMarket.Identity.Domain`)
 * **الكيانات وجذور التجميع (Aggregates & Entities):**
   * `User` (Aggregate Root): يمثل الموظف والمستخدم (`Username`, `PhoneNumber`, `Email`, `KeycloakUserId`, `PinHash`, `FullName`, `RoleId`, `BranchId`, `AccessFailedCount`, `LockoutEnd`, `LastLogin`).
-  * `Role` (Entity): الأدوار الوظيفية الستة في السوبرماركت (`RoleName`, `Description`, `IsRoleActive`).
-  * `Permission` (Entity): الصلاحيات الدقيقة بنمط `resource:action:scope` مع قيد فريد مركب.
-  * `RolePermission` (Join Entity): جدول الربط بمفتاح مركب طبيعي `(RoleId, PermissionId)`.
+  * `Role` (Entity): الأدوار الوظيفية الديناميكية في المنصة (مع 6 أدوار افتراضية تُزرع في النظام: SystemAdmin, StoreManager, Cashier, InventoryManager, PurchasingManager, Accountant) مع تطبيق `IAuditableEntity` و `IActivatable` عبر Explicit Interface Implementation، وحذف فعلي (Hard Delete) مشروط بعدم ارتباط مستخدمين.
+  * `Permission` (Entity): الصلاحيات الذرية الدقيقة بنمط `resource:action:scope` مع تصنيف `Category`، ككيان تعريف نقي (Pure Definition Entity) بدون أي حقول تدقيق.
+  * `PermissionGroup` (Entity): مجموعات الصلاحيات وحزم العمل القابلة لإعادة الاستخدام (`GroupName`, `Description`) لتسهيل إدارة الصلاحيات كباقات وظيفية.
+  * `PermissionGroupItem` (Join Entity): جدول ربط الصلاحيات بالمجموعات بمفتاح مركب طبيعي `(GroupId, PermissionId)` بدون معرف اصطناعي وبحذف فعلي فقط (Hard Delete).
+  * `RolePermissionGroup` (Join Entity): جدول ربط الأدوار بمجموعات الصلاحيات بمفتاح مركب طبيعي `(RoleId, GroupId)` بدون معرف اصطناعي وبحذف فعلي فقط (Hard Delete).
   * `Branch` (Aggregate Root): الفرع التجاري وبياناته التشغيلية والضريبية.
   * `BranchOperatingHours` (Child Entity): ساعات العمل اليومية لكل فرع مع قيد فريد `(BranchId, DayOfWeek)`.
 * **أحداث المجال المطبقة (Domain Events):**
@@ -38,6 +40,63 @@
   * `UserTransferredDomainEvent`: يُطلق عند نقل الموظف لفرع آخر لتحديث النطاق الجغرافي للصلاحيات.
   * `UserRoleChangedDomainEvent`: يُطلق عند ترقية أو تعديل الدور لإلغاء وتحديث كاش الصلاحيات.
   * `UserLockedOutDomainEvent`: يُطلق عند تكرار إدخال PIN خاطئ 3 مرات لقفل الحساب ومطابقة الكاميرات (CCTV Sync).
+
+#### 1.1 معمارية التفويض وإدارة الصلاحيات (Fine-Grained RBAC with Permission Groups)
+
+يعتمد النظام معمارية تفويض هرمية مرنة تفصل بين تعريف الصلاحية الذرية وحزم العمل والأدوار الوظيفية:
+
+```mermaid
+classDiagram
+    direction LR
+    class User {
+        +Guid Id
+        +string Username
+        +Guid RoleId
+        +Guid? BranchId
+    }
+    class Role {
+        +Guid Id
+        +string RoleName
+        +bool IsActive
+        +DateTimeOffset CreatedAt
+    }
+    class RolePermissionGroup {
+        +Guid RoleId
+        +Guid GroupId
+    }
+    class PermissionGroup {
+        +Guid Id
+        +string GroupName
+        +string? Description
+    }
+    class PermissionGroupItem {
+        +Guid GroupId
+        +Guid PermissionId
+    }
+    class Permission {
+        +Guid Id
+        +string Resource
+        +string Action
+        +string Scope
+        +string Category
+    }
+
+    User --> Role : belongs to (N:1)
+    Role "1" -- "0..*" RolePermissionGroup : links
+    RolePermissionGroup "0..*" -- "1" PermissionGroup : references
+    PermissionGroup "1" -- "0..*" PermissionGroupItem : bundles
+    PermissionGroupItem "0..*" -- "1" Permission : references
+```
+
+* **تسلسل منح الصلاحيات:**
+  1. كل موظف (`User`) يتبع دوراً وظيفياً واحداً (`Role`).
+  2. كل دور (`Role`) يحصل على حزمة أو أكثر من مجموعات الصلاحيات عبر جدول الربط `RolePermissionGroup`.
+  3. كل مجموعة صلاحيات (`PermissionGroup`) تحتوي على مجموعة من الصلاحيات الذرية عبر جدول الربط `PermissionGroupItem`.
+  4. الصلاحية الذرية (`Permission`) تحدد المورد والعملية والنطاق (`resource:action:scope`).
+* **مزايا هذا النمط:**
+  - سهولة صيانة الصلاحيات كباقات مجمعة (مثل باقة عمليات الكاشير الأساسية).
+  - إمكانية استحداث أدوار مخصصة دون إعادة إسناد عشرات الصلاحيات يدوياً.
+  - إمكانية التخزين المؤقت (Caching) لمصفوفة الصلاحيات الناتجة في ذاكرة التطبيق (In-Memory / Redis) لتجنب الـ Multi-Join في كل طلب HTTP.
 
 ---
 
