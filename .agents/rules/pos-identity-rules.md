@@ -70,7 +70,8 @@ These rules are NON-NEGOTIABLE. Follow them in every response without exception.
 ## 7. Database & EF Core Rules
 
 - PostgreSQL only. Use snake_case for all table and column names.
-- role_permissions uses Composite Primary Key (role_id, permission_id) — no surrogate key.
+- permission_group_items uses Composite Primary Key (group_id, permission_id) — no surrogate key.
+- role_permission_groups uses Composite Primary Key (role_id, group_id) — no surrogate key.
 - permissions table: UNIQUE constraint on (resource, action, scope).
 - branch_operating_hours table: UNIQUE constraint on (branch_id, day_of_week).
 - users.phone_number: VARCHAR(20) NOT NULL UNIQUE.
@@ -108,7 +109,7 @@ These rules are NON-NEGOTIABLE. Follow them in every response without exception.
 ## 10. Current Sprint Context
 
 - Sprint 1: Identity Service Domain Layer and Database.
-- Completed: User Aggregate Root, 5 Domain Events, UserErrors.
-- In Progress: Two-Tier Validation — fixing ValidationPipelineBehavior + cleaning User.cs.
-- Next Entities: Role, Permission, RolePermission, Branch, BranchOperatingHours, POSRegister.
+- Completed: User Aggregate Root, 5 Domain Events, UserErrors, ValidationPipelineBehavior fix.
+- In Progress: RBAC Entities — Role, Permission, PermissionGroup, PermissionGroupItem, RolePermissionGroup.
+- Next Entities: Branch, BranchOperatingHours.
 - Do NOT jump to Application or Infrastructure layers until ALL Domain entities are complete.
