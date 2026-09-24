@@ -40,10 +40,10 @@ These rules are NON-NEGOTIABLE. Follow them in every response without exception.
 
 ## 4. Validation — Two-Tier Strategy (MANDATORY)
 
-- Application Layer (FluentValidation): handles ALL format/structural validation (email RFC, phone E.164, length, Regex). Throws ValidationException with ALL failures.
+- Application Layer (FluentValidation): handles ALL format/structural validation (email RFC, phone E.164, length, Regex).
 - Domain Layer (Guard Clauses): handles ONLY defensive business invariants (null/empty checks, Guid.Empty, state checks). NO Regex. NO Contains('@') style checks.
-- ValidationPipelineBehavior MUST throw ValidationException — never concatenate errors into a single string.
-- Global Exception Handler in API layer will catch ValidationException and map to RFC 7807 ValidationProblemDetails.
+- ValidationPipelineBehavior MUST return Result.Failure(ValidationError) — never throw exceptions for control flow. It groups failures into an IReadOnlyDictionary<string, string[]> by property name so frontends get field-level errors.
+- ResultProblemDetailsExtensions maps ValidationError to RFC 7807 / RFC 9457 ValidationProblemDetails (HTTP 400 Bad Request) containing the field-level errors dictionary.
 
 ---
 
@@ -51,8 +51,8 @@ These rules are NON-NEGOTIABLE. Follow them in every response without exception.
 
 - Any change to BuildingBlocks must be backward compatible — it is shared by ALL services.
 - Result<T> and Result are the only return types for Command Handlers and Domain operations.
-- Error record is immutable and sealed. Use static factories: Error.Validation, Error.NotFound, Error.Conflict, Error.Failure, Error.Unauthorized, Error.Forbidden.
-- ValidationPipelineBehavior must throw FluentValidation.ValidationException.
+- Error record is immutable. Specialized ValidationError carries structured field-level errors dictionary.
+- ValidationPipelineBehavior must return Result.Failure(ValidationError) without throwing exceptions.
 
 ---
 
@@ -100,7 +100,7 @@ These rules are NON-NEGOTIABLE. Follow them in every response without exception.
 - NEVER inject MediatR, IPublisher, or broker interfaces into Domain entities.
 - NEVER use public set on entity properties.
 - NEVER use DateTime — always DateTimeOffset.
-- NEVER concatenate validation errors into a single string in ValidationPipelineBehavior.
+- NEVER throw exceptions for expected validation flow control — always return Result.Failure(ValidationError).
 - NEVER use int or long for phone numbers, postal codes, ID card numbers, or bank account numbers.
 - NEVER touch Sales, Inventory, or Catalog services during Identity Sprint work.
 

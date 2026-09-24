@@ -101,6 +101,14 @@ public class ValidationPipelineBehaviorTests
         result.Error.Description.Should().Contain("Name: Product name is required");
         result.Error.Description.Should().Contain("Price: Product price must be greater than zero");
 
+        // Verify structured ValidationError dictionary for frontend RFC 7807 problem details
+        result.Error.Should().BeOfType<ValidationError>();
+        var validationError = (ValidationError)result.Error;
+        validationError.Errors.Should().ContainKey("Name");
+        validationError.Errors["Name"].Should().Contain("Product name is required");
+        validationError.Errors.Should().ContainKey("Price");
+        validationError.Errors["Price"].Should().Contain("Product price must be greater than zero");
+
         nextCalled.Should().BeFalse(
             "handler must NEVER be invoked when validation fails, preventing invalid data from reaching business logic");
     }
