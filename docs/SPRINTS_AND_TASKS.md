@@ -72,23 +72,32 @@ flowchart LR
 ### 📝 قائمة المهام التفصيلية (Tasks):
 
 #### Task 1.1: كائنات القيمة لخدمة الهوية (Value Objects)
-* [ ] **`BranchCode`:** حماية كود الفرع (صيغة معيارية مثل "BR-01"، تنظيف المسافات، التحقق من عدم الفراغ).
-* [ ] **`PinHash`:** تغليف وتشفير الرمز السري للكاشير.
-* [ ] **`RegisterNumber`:** رقم محطة البيع الفريد (مثل "POS-01").
+* [x] **`BranchCode`:** حماية كود الفرع (صيغة معيارية مثل "BR-01"، تنظيف المسافات، التحقق من عدم الفراغ، الحد الأدنى 2 والأقصى 20).
+* [x] **`Address`:** كائن قيمة نقي للعنوان (Street, City, Region, PostalCode) مع المقارنة الهيكلية وتسطيحه لاحقاً عبر EF Core OwnsOne (وفق ADR-ID-017).
+* [x] **`RegisterCode`:** رقم محطة البيع الفريد (مثل "POS-01"، تنظيف المسافات، وحدود الطول 2-20).
 
 #### Task 1.2: كيانات الـ Domain وجذور التجميع (Rich Domain Entities)
-* [ ] **`Branch` (Aggregate Root):**
+* [x] **`Branch` (Aggregate Root):**
   * يطبق: `Entity<Guid>, IAuditableEntity, ISoftDeletable, IActivatable`.
   * مغلق الـ Constructor، ويوفر Factory Method: `Create(...)`.
-  * دوال أعمال صريحة: `UpdateDetails(...)`, `ToggleActive()`, `SoftDelete(deletedBy)`.
+  * دوال أعمال صريحة: `UpdateDetails(...)`, `UpdateAddress(...)`, `Activate()`, `Deactivate()`, `SoftDelete(deletedBy)`.
+  * إدارة ساعات العمل ومنع تكرار أيام الأسبوع `DuplicateDayOfWeek`.
   * يطلق حدث: `BranchCreatedDomainEvent`.
-* [ ] **`BranchOperatingHours` (Entity):** ساعات العمل اليومية لكل فرع (`DayOfWeek`, `OpenTime`, `CloseTime`).
-* [ ] **`StaffMember` (Aggregate Root):**
-  * بيانات الموظف، ربطه بالفرع، كود الـ PIN المشفر، ومعرف Keycloak (`KeycloakUserId`).
-  * دوال أعمال صريحة: `AssignPin(...)`, `TransferToBranch(...)`, `ToggleActive()`.
-* [ ] **`Permission` (Entity):** تمثيل الصلاحية بصيغة `resource:action:scope` مع الفئة والوصف.
-* [ ] **`PermissionGroup` (Aggregate Root):** تجميع الصلاحيات في باقات وظيفية (مثل `CashierPOSOperations`).
-* [ ] **`RolePermissionGroup` (Entity):** جدول الربط بين الأدوار الستة الكبرى ومجموعات الصلاحيات.
+* [x] **`BranchOperatingHours` (Entity):** ساعات العمل اليومية لكل فرع (`DayOfWeek`, `OpenTime`, `CloseTime`)، ودعم الورديات الليلية العابرة للمنتصف `IsOvernight`.
+* [x] **`POSRegister` (Aggregate Root):**
+  * محطة البيع المستقلة المرتبطة بالفرع `BranchId` وبصمة العتاد `TerminalIpOrFingerprint` (وفق ADR-ID-018).
+  * دوال أعمال صريحة: `UpdateDetails(...)`, `UpdateFingerprint(...)`, `ReassignBranch(...)`, `Activate()`, `Deactivate()`, `SoftDelete(...)`.
+  * يطلق حدث: `POSRegisterCreatedDomainEvent`.
+* [x] **`StaffMember` / `User` (Aggregate Root):**
+  * بيانات الموظف، ربطه بالفرع والدور، كود الـ PIN المشفر، ومعرف Keycloak (`KeycloakUserId`).
+  * أمن الحساب: عداد المحاولات الفاشلة وقفل الحساب المؤقت لمدة 15 دقيقة بعد 3 محاولات خاطئة (`Lockout`).
+  * دوال أعمال صريحة: `SetPin(...)`, `RemovePin()`, `AssignToBranch(...)`, `ChangeRole(...)`, `RecordLogin(...)`, `RecordFailedLogin(...)`, `Unlock()`, `SoftDelete(...)`.
+  * يطلق أحداث: `UserCreatedDomainEvent`, `UserLockedOutDomainEvent`, `UserTransferredDomainEvent`, `UserRoleChangedDomainEvent`, `UserDeactivatedDomainEvent`.
+* [x] **`Permission` (Entity):** تمثيل الصلاحية بصيغة `resource:action:scope` مع الفئة والوصف.
+* [x] **`PermissionGroup` (Aggregate Root):** تجميع الصلاحيات في باقات وظيفية (مثل `CashierPOSOperations`).
+* [x] **`Role` (Aggregate Root):** كيان الأدوار مع التفعيل والتعطيل والتدقيق الزمني.
+* [x] **`RolePermissionGroup` & `PermissionGroupItem` (Join Entities):** جداول الربط بمفاتيح أساسية مركبة وحذف فعلي Hard Delete.
+* [x] **`SuperMarket.Identity.Domain.UnitTests`:** حزمة اختبارات وحدة كاملة للـ Domain Layer (103 اختبارات بنسبة نجاح 100% بزمن 132ms بنمط Data-Driven `[Theory]` + `[InlineData]`).
 
 #### Task 1.3: إعدادات EF Core والتهجير (Infrastructure & Migrations)
 * [ ] **`IdentityDbContext`:** إعداد الـ DbContext وربطه بـ `AuditSaveChangesInterceptor`.

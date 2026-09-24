@@ -109,7 +109,19 @@ These rules are NON-NEGOTIABLE. Follow them in every response without exception.
 ## 10. Current Sprint Context
 
 - Sprint 1: Identity Service Domain Layer and Database.
-- Completed: User Aggregate Root, 5 Domain Events, UserErrors, ValidationPipelineBehavior fix.
-- In Progress: RBAC Entities — Role, Permission, PermissionGroup, PermissionGroupItem, RolePermissionGroup.
-- Next Entities: Branch, BranchOperatingHours.
-- Do NOT jump to Application or Infrastructure layers until ALL Domain entities are complete.
+- Completed: User Aggregate Root, Branch, BranchOperatingHours, POSRegister, Address, BranchCode, RegisterCode, Domain Events, Domain Errors.
+- In Progress: Domain Unit Testing (`SuperMarket.Identity.Domain.UnitTests`).
+- Next: Infrastructure Layer (`IdentityDbContext`, EF Core Configurations, Initial Migration).
+
+---
+
+## 11. Automated Testing Standards & Engineering Discipline (MANDATORY)
+
+- **Pre-Test Comprehensive Plan:** Before writing any test for any layer or component, you MUST present a structured, comprehensive Test Plan covering Scope, Invariants, Happy Paths, Failure Invariants, Edge Cases, and Test Level for user alignment.
+- **Data-Driven Testing by Default (`[Theory]` + `[InlineData]`):** Whenever testing multiple inputs, equivalence partitions, boundary values (min/max), or similar validation errors for the same method/contract, you MUST use `[Theory]` with `[InlineData]` rows.
+- **FORBIDDEN:** NEVER generate repetitive single-case `[Fact]` methods that share the same Arrange-Act-Assert logic with trivial input differences.
+- **Edge Cases & Boundary Value Analysis (BVA):** Explicitly test boundary values (minimum length, maximum length, one above, one below), midnight time transitions, empty/null variants, and illegal state transitions.
+- **Inspect Definitions First:** ALWAYS inspect the entity and domain event definitions to verify exact property names BEFORE writing assertions, preventing CS1061 compile errors and eliminating wasted token correction cycles.
+- **Restricted Use of `[Fact]`:** Restrict `[Fact]` ONLY to unique execution paths (e.g., verifying Domain Event emission payload, or complex multi-step state machine workflows).
+- **Documentation Synchronization:** After completing tests or any architectural milestone, you MUST update project documentation in `docs/` (e.g. `docs/SPRINTS_AND_TASKS.md`) and maintain a dedicated test analysis document detailing all tested scenarios and boundaries to keep documentation 100% in sync with code.
+

@@ -35,4 +35,7 @@
   <Folder Name="/tests/BuildingBlocks/">
     <Project Path="tests/BuildingBlocks/SuperMarket.BuildingBlocks.UnitTests/SuperMarket.BuildingBlocks.UnitTests.csproj" />
   </Folder>
+  <Folder Name="/tests/Services/Identity/">
+    <Project Path="tests/Services/Identity/SuperMarket.Identity.Domain.UnitTests/SuperMarket.Identity.Domain.UnitTests.csproj" />
+  </Folder>
 </Solution>
