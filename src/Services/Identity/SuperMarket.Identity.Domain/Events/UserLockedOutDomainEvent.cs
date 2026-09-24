@@ -1,4 +1,4 @@
-// Domain event emitted when a user account is locked out after exceeding failed authentication attempts.
+/// Domain event emitted when a user account is locked out after exceeding failed authentication attempts.
 
 using SuperMarket.BuildingBlocks.Domain;
 
