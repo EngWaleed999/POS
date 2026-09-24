@@ -102,4 +102,37 @@ public class ResultProblemDetailsExtensionsTests
         act.Should().ThrowExactly<InvalidOperationException>()
             .WithMessage("Cannot convert a successful result into ProblemDetails.");
     }
+
+    // =========================================================================
+    // 4. Structured ValidationError Mapping (RFC 7807 ValidationProblemDetails)
+    // =========================================================================
+
+    [Fact]
+    public void ToProblemDetails_ShouldReturnValidationProblem_WhenErrorIsValidationError()
+    {
+        // Arrange
+        var errors = new Dictionary<string, string[]>
+        {
+            ["Username"] = new[] { "Username cannot be empty." },
+            ["Email"] = new[] { "Invalid email address." }
+        };
+        var validationError = Error.Validation("General.Validation", "Validation failed", errors);
+        var result = Result.Failure(validationError);
+
+        // Act
+        var httpResult = result.ToProblemDetails();
+
+        // Assert
+        var problemResult = httpResult.Should().BeOfType<ProblemHttpResult>().Subject;
+        problemResult.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        problemResult.ProblemDetails.Should().BeOfType<HttpValidationProblemDetails>();
+        var validationProblemDetails = (HttpValidationProblemDetails)problemResult.ProblemDetails;
+        validationProblemDetails.Errors.Should().ContainKey("Username");
+        validationProblemDetails.Errors["Username"].Should().Contain("Username cannot be empty.");
+        validationProblemDetails.Errors.Should().ContainKey("Email");
+        validationProblemDetails.Errors["Email"].Should().Contain("Invalid email address.");
+        validationProblemDetails.Extensions.Should().ContainKey("errorCode");
+        validationProblemDetails.Extensions["errorCode"].Should().Be("General.Validation");
+    }
 }
+

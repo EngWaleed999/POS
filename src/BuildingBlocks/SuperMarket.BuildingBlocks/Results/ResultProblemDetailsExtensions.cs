@@ -34,6 +34,19 @@ public static class ResultProblemDetailsExtensions
     // -------------------------------------------------------------------------
     private static IResult CreateProblemDetails(Error error)
     {
+        if (error is ValidationError validationError)
+        {
+            return HttpResults.ValidationProblem(
+                errors: validationError.Errors,
+                detail: validationError.Description,
+                title: "Validation Error",
+                type: "https://datatracker.ietf.org/doc/html/rfc7231#section-6.5.1",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["errorCode"] = validationError.Code
+                });
+        }
+
         var statusCode = error.Type switch
         {
             ErrorType.Validation => StatusCodes.Status400BadRequest,
