@@ -133,7 +133,7 @@ public sealed class Branch : AggregateRoot<Guid>, IAuditableEntity, ISoftDeletab
         string phone,
         string taxNumber,
         string? email = null,
-        string currency = "SAR")
+        string currency = "YE")
     {
         if (code is null)
             return Result.Failure<Branch>(BranchErrors.EmptyBranchCode);
