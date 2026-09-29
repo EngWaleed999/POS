@@ -32,6 +32,10 @@ Generated_Code/
 # 3. Sensitive Configuration & Secrets (Crucial for Security)
 # -------------------------------------------------------------------------
 # Never commit real secrets, credentials or private keys to git
+.env
+.env.*
+!.env.example
+!deploy/docker/.env.example
 *.env
 *.env.local
 *.env.*.local
