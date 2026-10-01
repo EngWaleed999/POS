@@ -97,14 +97,18 @@ flowchart LR
 * [x] **`PermissionGroup` (Aggregate Root):** تجميع الصلاحيات في باقات وظيفية (مثل `CashierPOSOperations`).
 * [x] **`Role` (Aggregate Root):** كيان الأدوار مع التفعيل والتعطيل والتدقيق الزمني.
 * [x] **`RolePermissionGroup` & `PermissionGroupItem` (Join Entities):** جداول الربط بمفاتيح أساسية مركبة وحذف فعلي Hard Delete.
-* [x] **`SuperMarket.Identity.Domain.UnitTests`:** حزمة اختبارات وحدة كاملة للـ Domain Layer (103 اختبارات بنسبة نجاح 100% بزمن 132ms بنمط Data-Driven `[Theory]` + `[InlineData]`).
+* [x] **`SuperMarket.Identity.Domain.UnitTests`:** حزمة اختبارات وحدة كاملة للـ Domain Layer (116 اختباراً بنسبة نجاح 100% بنمط Data-Driven `[Theory]` + `[InlineData]`).
 
-#### Task 1.3: إعدادات EF Core والتهجير (Infrastructure & Migrations)
-* [ ] **`IdentityDbContext`:** إعداد الـ DbContext وربطه بـ `AuditSaveChangesInterceptor`.
-* [ ] **`EntityConfigurations` (Fluent API):**
-  * تطبيق `IEntityTypeConfiguration` لكل كيان لتحديد القيود (Indexes, MaxLengths, Foreign Keys).
-  * تفعيل الـ **Global Query Filter** لمنع ظهور السجلات المحذوفة منطقياً (`is_deleted == false`).
-* [ ] **Initial Migration:** إنشاء وتطبيق أول Migration لقاعدة بيانات PostgreSQL (`identity_db`).
+#### Task 1.3: إعدادات EF Core والبنية التحتية (Infrastructure & Configurations)
+* [x] **`IdentityDbContext`:** إعداد الـ DbContext في Schema مخصص (`identity`)، وربطه بـ `AuditSaveChangesInterceptor` و `DispatchDomainEventsInterceptor`، وضبط سلوك التتبع الافتراضي على `NoTracking`.
+* [x] **`EntityConfigurations` (Fluent API):**
+  * إنشاء 9 ملفات تكوين مستقلة لكل كيان (`Branch`, `BranchOperatingHours`, `POSRegister`, `User`, `Role`, `Permission`, `PermissionGroup`, `PermissionGroupItem`, `RolePermissionGroup`).
+  * تفعيل اتفاقية تسمية PostgreSQL القياسية (`UseSnakeCaseNamingConvention`).
+  * تفعيل **الفهارس الجزئية المشروطة (Partial Unique Indexes)** مع الحذف الناعم (`WHERE is_deleted = false`).
+  * تسطيح كائنات القيمة (`Address` عبر `OwnsOne`) وتحويل كائنات القيمة الأحادية (`BranchCode`, `RegisterCode` عبر `HasConversion`).
+  * تفعيل الـ **Global Query Filter** تلقائياً لجميع الكيانات المطبقة لـ `ISoftDeletable`.
+* [x] **عزل الأسرار وتأمين البيئة (Secret Isolation):** تطهير `docker-compose.yml` وعزل كلمات المرور وسلاسل الاتصال في ملفات `.env` المحمية بـ `.gitignore` مع توفير قوالب `.env.example`.
+* [x] **Initial Migration:** إنشاء وتطبيق أول Migration لقاعدة بيانات PostgreSQL (`identity_db`).
 
 ---
 
