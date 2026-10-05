@@ -1,1101 +1,203 @@
-# 🧠 بنك الأسئلة والمفاهيم المعمارية (Architecture & Security Q&A Knowledge Base)
-
-> **📌 ملاحظة:** هذا الملف مخصص لحفظ وتوثيق الأسئلة المعمارية الذكية، المفاهيم العميقة، وشروحات الأدوات والتقنيات التي نناقشها ونسترجعها أثناء بناء المشروع للرجوع إليها دائماً وفي المقابلات التقنية. (يتم التحديث فقط بناءً على طلب صريح من المهندس).
-
----
-
-## 📑 الفهرس السريع (Table of Contents)
-
-1. [ما هو الـ JWKS (JSON Web Key Set) وكيف يعمل الـ JWKS Caching؟](#1-ما-هو-الـ-jwks-json-web-key-set-وكيف-يعمل-الـ-jwks-caching)
-2. [هل بيانات الـ JWT مكشوفة؟ وما الفرق بين التوقيع (Signing) والتشفير (Encryption)؟ وماذا يوجد داخل المفاتيح؟](#2-هل-بيانات-الـ-jwt-مكشوفة-وما-الفرق-بين-التوقيع-signing-والتشفير-encryption-وماذا-يوجد-داخل-المفاتيح)
-3. [ما الفرق بين تدوير مفاتيح التشفير (Key Rotation) وتدوير التوكن (Refresh Token Rotation)؟ وكيف يحمي Keycloak من سرقة الـ Refresh Token؟](#3-ما-الفرق-بين-تدوير-مفاتيح-التشفير-key-rotation-وتدوير-التوكن-refresh-token-rotation-وكيف-يحمي-keycloak-من-سرقة-الـ-refresh-token)
-4. [ما هو الـ DDD (Domain-Driven Design) الحقيقي وما هي ركائزه الأربعة؟](#4-ما-هو-الـ-ddd-domain-driven-design-الحقيقي-وما-هي-ركائزه-الأربعة)
-5. [ما هو نمط الـ Factory Method في Domain Entities؟ وما هي المشاكل الـ 5 العميقة التي يحلها؟](#5-ما-هو-نمط-الـ-factory-method-في-domain-entities-وما-هي-المشاكل-الـ-5-العميقة-التي-يحلها)
-6. [ما هي فائدة أحداث المجال (Domain Events)؟ وما الفرق بينها وبين Integration Events؟](#6-ما-هي-فائدة-أحداث-المجال-domain-events-وما-الفرق-بينها-وبين-integration-events)
-7. [ما هي مكتبة BuildingBlocks.Domain ولماذا نعتبرها المحطة المركزية المشتركة؟](#7-ما-هي-مكتبة-buildingblocksdomain-ولماذا-نعتبرها-المحطة-المركزية-المشتركة)
-8. [لماذا نستخدم DDD في خدمة الـ Identity؟ وهل يعتبر Over-Engineering؟](#8-لماذا-نستخدم-ddd-في-خدمة-الـ-identity-وهل-يعتبر-over-engineering)
-9. [لماذا نستخدم نمط Result<T> و Error بدلاً من رمي الـ Exceptions في معالجة أخطاء البزنس؟ وما هي المشاكل العميقة للـ Exceptions كـ Flow Control؟](#9-لماذا-نستخدم-نمط-resultt-و-error-بدلا-من-رمي-الـ-exceptions-في-معالجة-أخطاء-البزنس-وما-هي-المشاكل-العميقة-للـ-exceptions-كـ-flow-control)
-10. [كيف نصمم نظام الصلاحيات المتقدم (Hybrid RBAC / Fine-Grained Permissions: resource:action:scope) ولماذا نفصل بين أدوار Keycloak وأذونات التطبيق؟](#10-كيف-نصمم-نظام-الصلاحيات-المتقدم-hybrid-rbac--fine-grained-permissions-resourceactionscope-ولماذا-نفصل-بين-أدوار-keycloak-وأذونات-التطبيق)
-11. [التشريح الهندسي الدقيق لنمط Result Pattern ومفاهيم C# المتقدمة: أرقام الـ Enum، سر sealed، دوال Match و Bind الوظيفية، وهل هذا التصميم Over-Engineering؟](#11-التشريح-الهندسي-الدقيق-لنمط-result-pattern-ومفاهيم-c-المتقدمة)
+# دراسة حالة معمارية: معضلة الوصول للبيانات في .NET Clean Architecture
+## Case Study: The Data Access Architecture Dilemma (Repository vs. IQueryable)
 
 ---
 
-## 1. ما هو الـ JWKS (JSON Web Key Set) وكيف يعمل الـ JWKS Caching؟
+## 1. المشكلة (The Problem)
 
-### ❓ السؤال:
-> *"ماذا يعني JWKS؟ وأنت قلت التحقق عديم الحالة من الـ Tokens عبر JWKS Caching؛ الذي أعرفه أن مع كل Request يقوم السيرفر بالتحقق من الـ Token، فكيف يتم ذلك بدون بطء؟"*
+### 1.1 خلفية النقاش والشرارة الأولى
+عند تصميم طبقة الـ Application لخدمة **Identity Service** في مشروع الـ POS، قُدّم مقترح أولي يعتمد على كشف واجهة واحدة `IIdentityUnitOfWork` ترجع `IQueryable<T>` لجميع الكيانات مرفقة بجدول مقارنة (Trade-offs) مع الـ **Repository Pattern**.
 
-### 💡 الإجابة المعمارية المفصلة:
+المطور (القادم من خلفية قوية في **Node.js / Express / NestJS** حيث تُستخدم أدوات مثل Prisma و TypeORM و Services نمطية) لم يقتنع بالجدول، وتحدى المقارنة باعتراضات هندسية دقيقة:
 
-#### أ. ما هو الـ JWKS؟
-* **JWKS** هو اختصار لـ **JSON Web Key Set** (معيار RFC 7517).
-* هو عبارة عن ملف JSON منشور على رابط عام من قِبل مزود الهوية (Keycloak) يحتوي على **المفاتيح العامة (Public Keys)** المستخدمة للتحقق من التوقيع الرقمي للـ JWTs الصادرة منه.
-* رابط الـ JWKS في Keycloak يكون بالصيغة:
-  `http://keycloak:8080/realms/ecommerce/protocol/openid-connect/certs`
+> 1. *"في Repository Pattern نقدر نسوي Generic لكل Aggregate بملف واحد وإذا احتاج ملف معين استعلام مختلف نسوي له، لكن بنسبة 99% ملف واحد يحل مشكلة عدد الملفات!"*
+> 2. *"مرونة الاستعلام بفضل الـ Generic لم نعد نحتاج أكثر من دالة."*
+> 3. *"قابلية الاختبار (Unit Test) بـ Mock أسهل بكثير في الـ Repository، بينما IQueryable يحتاج In-Memory أو Testcontainers وهذا عيب كبير!"*
+> 4. *"استبدال الـ ORM: لو غيرنا الـ ORM في نهج IQueryable سنغير 100 Handler، بينما في الـ Repository نغير ملف التنفيذ فقط!"*
+> 5. *"الأداء: نقدر نستخدم IQueryable بداخل الـ Repository!"*
+> 6. *"تكرار الاستعلامات: في نهج IQueryable ستتكرر الاستعلامات المتشابهة في أكثر من Handler!"*
+> 7. *"أنا قادم من Node.js والوضع هناك مختلف، أين نضع الـ Logic والـ Validation هنا؟"*
 
-#### ب. كيف يعمل التحقق التقليدي البطيء (Token Introspection)؟ ❌
-* في الأنظمة القديمة أو التصاميم الضعيفة، مع كل Request يصل للـ API، يقوم السيرفر بعمل HTTP Call عبر الشبكة لـ Keycloak ليسأله: *"هل هذا التوكن صحيح؟"*.
-* **المشكلة:** هذا يضيف تأخيراً (50-100ms) لكل طلب، ويجعل Keycloak ينهار تحت الضغط (Single Point of Failure).
-
-#### ج. كيف يعمل الـ JWKS Caching (التحقق عديم الحالة - Stateless Verification)؟ ✅
-1. **عند إقلاع السيرفر (On Startup):** تقوم مكتبة `JwtBearer` في ASP.NET Core بسحب المفتاح العام من رابط الـ JWKS مرة واحدة وتخزنه في **ذاكرة الرام (In-Memory Cache)**.
-2. **مع كل Request يرسله المستخدم:**
-   * السيرفر **يتحقق فعلاً من صحة التوكن وتوقيعه وتاريخ صلاحيته في كل Request**.
-   * لكنه يقوم بذلك **محلياً في الذاكرة (In-Memory Mathematical Verification)** عبر المفتاح العام المخزن في الرام.
-   * العملية تستغرق **أقل من 0.1 ميلي ثانية (Sub-millisecond)** لأنها مجرد عملية حسابية رياضية بدون أي اتصال شبكي بـ Keycloak.
-3. **متى يعود السيرفر لـ Keycloak؟**
-   * فقط عند انتهاء مدة الكاش (مثلاً بعد 24 ساعة)، أو إذا ظهر توكن يحمل معرّف مفتاح جديد (`kid` - Key ID) بسبب تدوير المفاتيح.
-
----
-
-## 2. هل بيانات الـ JWT مكشوفة؟ وما الفرق بين التوقيع (Signing) والتشفير (Encryption)؟ وماذا يوجد داخل المفاتيح؟
-
-### ❓ السؤال:
-> *"إذا كان الـ Public Key مفتاح عام ومتاح للجميع للتحقق من التوقيع، ألا يعني هذا أن بيانات الـ JWT مكشوفة أصلاً؟ وماذا يوجد بداخل كل من الـ Private Key والـ Public Key؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-#### أ. الفرق الجوهري بين التوقيع الرقمي (Signature) والتشفير (Encryption):
-* **التوقيع الرقمي (JWS - JSON Web Signature):**
-  * **الهدف:** ليس إخفاء البيانات (Confidentiality)، بل **إثبات المصدر ومنع التلاعب (Authenticity & Integrity)**.
-  * **البيانات في الـ Payload (مثل `sub`, `email`, `role`) مكشوفة ومكتوبة بـ Base64.** أي شخص يعترض التوكن يستطيع قراءتها.
-  * **القاعدة الذهبية:** **ممنوع منعاً باتاً وضع بيانات سرية أو حساسة (مثل كلمات المرور أو أرقام البطاقات البنكية) داخل الـ JWT.**
-  * **المستحيل أمنياً هو التلاعب بها (Tamper-Proof):** إذا حاول أي شخص تعديل دوره من `Customer` إلى `Admin`، سيفشل فحص التوقيع فوراً ويطرده السيرفر بـ `401 Unauthorized`.
-
-#### ب. ماذا يوجد داخل كل من الـ Private Key والـ Public Key؟
-المفاتيح **لا تحتوي على أي بيانات مستخدمين أو نصوص إطلاقاً**، بل هي عبارة عن **ثوابت رياضية وأرقام أولية ضخمة (Mathematical Constants)** مبنية على خوارزمية RSA (RS256):
-1. **المفتاح السري (Private Key):**
-   * موجود **فقط وحصرياً داخل Keycloak** ومحمي بأعلى درجات التشفير.
-   * يحتوي على الأرقام الأولية الخاصة بالمعادلة ($n, d$).
-   * وظيفته: توقيع (Sign) نص الـ JWT لإنتاج الـ Signature المشفر.
-2. **المفتاح العام (Public Key / JWKS):**
-   * متاح للجميع في رابط الـ JWKS بصيغة JSON.
-   * يحتوي فقط على المعامل الرياضي ($n$) والأس العام ($e = 	ext{AQAB}$).
-   * وظيفته: التحقق رياضياً من أن التوقيع تم حصراً بالمفتاح السري المقابل دون الحاجة لمعرفة المفتاح السري نفسه.
-
----
-
-## 3. ما الفرق بين تدوير مفاتيح التشفير (Key Rotation) وتدوير التوكن (Refresh Token Rotation)؟ وكيف يحمي Keycloak من سرقة الـ Refresh Token؟
-
-### ❓ السؤال:
-> *"ما الفرق بين تدوير المفاتيح وتدوير التوكن؟ وإذا تم تفعيل Refresh Token Rotation، هل يعني ذلك أن الـ Backend سيتحدث مع Keycloak باستمرار؟ وكيف يحمي Keycloak إذا تم سرقة الـ Refresh Token؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-#### أ. الفصل بين المفهومين:
+### 1.2 تفكيك المشكلة الهندسية العميقة (The Architectural Dilemma)
+المشكلة الحقيقية ليست مجرد اختيار نمط برمجي (Design Pattern)، بل هي **تضارب جوهري بين ثلاث قوى تصميمية** عند استخدام **EF Core** داخل **Clean Architecture**:
 
 ```
-┌────────────────────────────────────────────────────────┐
-│ 1. تدوير مفاتيح التشفير (Cryptographic Key Rotation)   │
-│    • يخص خادم Keycloak نفسه (زوج مفاتيح RSA).          │
-│    • يحدث نادراً جداً (مثلاً كل سنة أو كل 6 أشهر).     │
-└────────────────────────────────────────────────────────┘
-
-┌────────────────────────────────────────────────────────┐
-│ 2. تدوير توكن التحديث للمستخدم (Refresh Token Rotation)│
-│    • يخص المستخدم في المتصفح أو الموبايل.              │
-│    • يحدث كل 15 دقيقة عند انتهاء صلاحية الـ Access Token. │
-└────────────────────────────────────────────────────────┘
+                          [معضلة التصميم]
+                                 ▲
+                                / \
+                               /   \
+                              /     \
+    [حماية شروط الـ Domain] ◄───────► [مرونة وسرعة الاستعلامات]
+             (DDD Aggregates)                (SQL Projections)
+                               \   /
+                                \ /
+                                 ▼
+                     [عزل طبقة الـ Infrastructure]
+                          (Dependency Inversion)
 ```
 
-#### ب. من يتحدث مع من؟ (سر الأداء الخارق للـ Microservices):
-1. **خدمات الـ Backend (`Catalog`, `Orders`, `Basket`, `Identity`):**
-   * **لا تعرف شيئاً عن الـ Refresh Token ولا تراه أبداً!**
-   * العميل يرسل لها فقط الـ `Access Token` قصير الأجل (15 دقيقة).
-   * الـ Backend تفحص التوكن محلياً في الذاكرة عبر الـ **Cached JWKS** في **0.05ms**، وتخدم ملايين الطلبات بدون أي اتصال شبكي بـ Keycloak.
-2. **تطبيق الـ Frontend (المتصفح / تطبيق الموبايل):**
-   * يحتفظ بالـ `Refresh Token` بأمان.
-   * عندما تنتهي الـ 15 دقيقة، يقوم الـ Frontend (في الخلفية بدون إزعاج المستخدم) بإرسال الـ Refresh Token إلى Keycloak.
-   * يقوم Keycloak بإعطائه `Access Token` جديد و `Refresh Token` جديد (تدوير التوكن)، ثم يعود الـ Frontend لمخاطبة الـ Backend بالـ Access Token الجديد.
+1. **فخ التجريد السطحي (The Redundant Wrapper Trap):**  
+   إذا بنينا `IRepository<T>` عام، واكتشفنا أننا بحاجة لـ `Include` و `Where` مرنة، فاضطررنا لإرجاع `IQueryable<T>` من الـ Repository:
+   - أصبح الـ Repository مجرد غلاف مفرغ (Wrapper) لا يفعل شيئاً سوى إعادة كتابة ما يقدمه `DbSet<T>` الجاهز من مايكروسوفت.
+   - هذا يضيف تعقيداً بلا أي قيمة مضافة.
 
-#### ج. كيف يحمي Keycloak من سرقة الـ Refresh Token؟ (Reuse & Theft Detection):
-Keycloak يطبق ميزة أمنية ذكية جداً وفق معيار **OAuth 2.1**:
-1. **Single-Use Token:** كل Refresh Token يستخدم لمرة واحدة فقط ويحترق فوراً.
-2. **كشف إعادة الاستخدام (Reuse Detection):**
-   * لو سرق مخترق `Refresh_Token_1`، وقام الضحية الشرعي باستخدامه، فسيقوم Keycloak بحرقه وإعطاء الضحية `Refresh_Token_2`.
-   * لو جاء المخترق بعد ساعة وحاول استخدام `Refresh_Token_1` المحروق:
-   * يكتشف Keycloak فوراً أن هذا توكن مستخدم مسبقاً، ويعلن حالة **اختراق أمني (Security Breach)**.
-   * **الإجراء التلقائي:** يقوم Keycloak **بإلغاء وحرق كافة الجلسات والـ Tokens الخاصة بهذا المستخدم بالكامل**، ويتم طرد المخترق والضحية معاً، وتجبر الضحية على تسجيل الدخول بكلمة المرور و MFA، ويصبح التوكن المسروق بلا أي فائدة!
+2. **فخ التجريد المسرّب (The Leaky Abstraction Trap):**  
+   `IQueryable` ليس مجرد مصفوفة في الذاكرة؛ إنه **شجرة تعبيرات (Expression Tree)** مرتبطة بمترجم الـ ORM (EF Core Query Provider).
+   - إذا كشفت `IQueryable` خارج الـ Repository، فأنت **لم تعزل الـ ORM أبداً**. لو استبدلت EF Core بـ Dapper، ستنهار الـ 100 Handler لأن Dapper لا يفهم `IQueryable` ولا `Include`.
 
----
+3. **فخ تدمير حدود الـ Aggregate في DDD:**  
+   في الـ Domain، ساعات العمل (`BranchOperatingHours`) ليست كياناً مستقلاً؛ هي تابعة للفرع (`Branch`).
+   - لو أنشأنا `IRepository<T>` عام أو كشفنا `IQueryable<OperatingHours>`، يستطيع أي مطور في أي Handler تعديل ساعات العمل مباشرة دون المرور بكيان `Branch`، مما يؤدي إلى تجاوز قواعد العمل (مثلاً: ألا يكون وقت الإغلاق قبل الفتح) وفساد البيانات الصامت.
 
-## 4. ما هو الـ DDD (Domain-Driven Design) الحقيقي وما هي ركائزه الأربعة؟
-
-### ❓ السؤال:
-> *"ما هو DDD الحقيقي؟ أنا أعرف فقط 1% منه وهو أن الكلاس يحمي خصائصه، فما هو مفهومه كمهندس معماري؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-الـ **DDD** ليس إطار عمل أو مكتبة، بل هو **فلسفة ومنهجية لتصميم البرمجيات المعقدة** صاغها *Eric Evans*. 
-فكرته الجوهرية: **"يجب أن ينعكس منطق ولغة البزنس الحقيقي (Domain) مباشرة في الكود، وليس مجرد تمثيل لجداول قاعدة البيانات."**
-
-### الركائز الأربعة الأساسية في DDD:
-1. **Entity (الكيان):** كائن يُعرّف بهوية فريدة مستمرة (`Id`) طوال حياته (مثل `UserProfile` و `Order`). لو تغير اسم العميل وإيميله، يظل نفس المستخدم لأن الـ Id ثابت.
-2. **Value Object (كائن القيمة):** كائن يُعرّف بـ "قيمه وخصائصه" فقط وليس له Id، وهو غير قابل للتعديل (Immutable). مثال: `Money { Amount = 100, Currency = "USD" }` أو `Address`. لو كان هناك كائنان بنفس الخصائص فهما متطابقان تماماً في الـ Equality.
-3. **Aggregate Root (جذر التجميع):** مجموعة من الـ Entities والـ Value Objects المترابطة التي تُعامل كوحدة واحدة في تعديل البيانات. الـ Aggregate Root هو "الباب الوحيد المسموح به" للتعامل مع هذه المجموعة لحماية قواعد البزنس.
-4. **Domain Events (أحداث المجال):** أحداث هامة وقعت داخل البزنس يجب إعلام باقي أجزاء النظام بها (مثل `UserProfileCreated`).
+4. **فخ الثقة الكاذبة في الـ Mocking (The False Confidence Trap):**  
+   سهولة عمل Mock لـ `_repo.GetByIdAsync()` تعطي شعوراً زائفاً بالأمان. الـ Mock يختبر تسلسل الاستدعاء فقط، لكنه يعجز عن اكتشاف:
+   - أخطاء ترجمة الاستعلام إلى SQL في Postgres.
+   - مشكلات الأداء القاتلة مثل $N+1$ Queries.
+   - كسر الـ Unique Database Constraints عند التزامن.
 
 ---
 
-## 5. ما هو نمط الـ Factory Method في Domain Entities؟ وما هي المشاكل الـ 5 العميقة التي يحلها؟
+## 2. الحلول المتاحة (The Alternatives)
 
-### ❓ السؤال:
-> *"ما هو تعريف Factory Method؟ ولماذا نغلق الـ Constructor ونستخدمها؟ وما هي المشاكل التقنية التي تحلها بعمق؟ أعطني مثالاً برمجياً كاملاً."*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-#### أ. التعريف (Definition):
-الـ **Factory Method** في الـ Domain هي **دالة ساكنة عامة (Public Static Method)** داخل الـ Entity، تكون هي **المسار الوحيد المصرح به لإنشاء كائن جديد في الذاكرة**، مع إغلاق الـ Constructor وجعله `private`.
-
-#### ب. المشاكل والعيوب القاتلة للـ Constructor العادي (`new UserProfile(...)`):
-
-1. **الـ Constructors لا تعبر عن لغة ونية البزنس (Ubiquitous Language):**
-   * الـ Constructor اسمه دائماً نفس اسم الكلاس (`public UserProfile(...)`).
-   * لو كان لديك 3 سيناريوهات لإنشاء المستخدم (مستخدم مسجل، مستخدم مدعو، زائر Guest)، سيجبرك الـ Constructor على عمل Overloading غامض.
-   * الـ Factory Method تمنحك أسماء تعبر عن النية: `CreateRegistered(...)`, `CreateInvited(...)`, `CreateGuest(...)`.
-
-2. **الـ Constructors لا تستطيع إرجاع `Result<T>` (فخ الـ Exceptions):**
-   * الـ Constructor إما أن ينشئ الكائن أو يرمي Exception (`throw new Exception`).
-   * رمي الـ Exceptions مكلف جداً في استهلاك الـ CPU والـ Stack Trace. أخطاء إدخال المستخدم هي حالات بزنس متوقعة وتستحق إرجاع كائن `Result.Failure(Error)` نظيف بدون أي Exceptions.
-
-3. **فخ تعارض الـ Entity مع EF Core (Materialization Conflict) ⚠️:**
-   * عند جلب مستخدم قديم من قاعدة البيانات، يحتاج EF Core لإنشاء الكائن في الذاكرة.
-   * لو كانت قواعد التحقق وإطلاق الـ Events داخل الـ Constructor، سيعيد EF Core فحص القواعد القديمة وقد يفشل، وسيقوم بإطلاق أحداث `UserCreatedEvent` وإرسال إيميلات ترحيبية مع كل استعلام `SELECT`!
-   * **الحل:** وضع Constructor فارغ `private UserProfile() { }` يستخدمه EF Core فقط، وحصر منطق البزنس داخل الـ Factory Method.
-
-4. **ضمان تهيئة الحالة الأولية والـ Events ذرياً (Atomic Invariant Enforcement):**
-   * الـ Factory Method تضمن تنظيف المدخلات (`Trim().ToLower()`)، وتعيين الحالة الافتراضية، وإطلاق الـ Domain Event في عملية ذرية واحدة مستحيل نسيانها.
-
-#### ج. مثال برمجي متكامل (.NET 10 Rich Domain Model):
-
-```csharp
-public sealed class UserProfile : AggregateRoot<Guid>
-{
-    public string Email { get; private set; }
-    public string FirstName { get; private set; }
-    public string LastName { get; private set; }
-    public UserRole Role { get; private set; }
-    public UserStatus Status { get; private set; }
-    public DateTimeOffset CreatedAt { get; private set; }
-
-    // Constructor خاص لـ EF Core فقط لتحميل البيانات من PostgreSQL بدون تفعيل البزنس
-    private UserProfile() { }
-
-    // Factory Method للبزنس والتحقق من القواعد
-    public static Result<UserProfile> Create(
-        Guid id, 
-        string email, 
-        string firstName, 
-        string lastName, 
-        UserRole role)
-    {
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains('@'))
-            return Result.Failure<UserProfile>(UserErrors.InvalidEmail);
-
-        if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
-            return Result.Failure<UserProfile>(UserErrors.EmptyName);
-
-        var user = new UserProfile
-        {
-            Id = id,
-            Email = email.Trim().ToLowerInvariant(),
-            FirstName = firstName.Trim(),
-            LastName = lastName.Trim(),
-            Role = role,
-            Status = UserStatus.Active,
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-
-        // إطلاق حدث المجال
-        user.RaiseDomainEvent(new UserProfileCreatedDomainEvent(user.Id, user.Email, user.Role.ToString()));
-
-        return Result.Success(user);
-    }
-}
-```
-
----
-
-## 6. ما هي فائدة أحداث المجال (Domain Events)؟ وما الفرق بينها وبين Integration Events؟
-
-### ❓ السؤال:
-> *"ما فائدة أحداث المجال Domain Events؟ وما المشكلة التي تحلها؟ وما الفرق بينها وبين Integration Events؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-#### أ. حل مشكلة كود السباغيتي والتأثيرات الجانبية (Side-Effects Spaghetti):
-* عند إنشاء المستخدم، نحتاج لـ: (1) إرسال إيميل ترحيبي، (2) إنشاء سلة تسوق، (3) منحه نقاط مكافأة، (4) تسجيل حركة أمان.
-* وضع كل هذا في دالة واحدة يجعل الكود شديد التعقيد والارتباط (**Tight Coupling**).
-* **مع الـ Domain Events:** الكيان يكتفي بإطلاق حدث `UserProfileCreatedDomainEvent`. وكل خدمة أخرى تكون عبارة عن Handler مستقل يستمع للحدث وينفذ وظيفته باستقلالية تامة (**Decoupled Architecture**).
-
-#### ب. الفرق الجوهري:
-* **Domain Event:** حدث **داخلي داخل نفس الخدمة** (In-Memory عبر MediatR `INotification`) وينفذ داخل نفس الـ Database Transaction.
-* **Integration Event:** حدث **خارجي بين الـ Microservices** (يُنشر عبر RabbitMQ / MassTransit لتسمعه خدمات أخرى في النظام الموزع).
-
----
-
-## 7. ما هي مكتبة BuildingBlocks.Domain ولماذا نعتبرها المحطة المركزية المشتركة؟
-
-### ❓ السؤال:
-> *"هل BuildingBlocks.Domain تُستخدم في أكثر من خدمة كمحطة مركزية مشتركة؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-**نعم، بكل تأكيد.**
-* كل خدمة في الـ Microservices تمتلك منطق البزنس الخاص بها، ولكن **جميع الخدمات تحتاج إلى نفس الأساسيات الهندسية التأسيسية (Domain Primitives)**:
-  * `Entity<TId>` (أساس مقارنة الهويات).
-  * `AggregateRoot<TId>` (أساس إدارة الـ Domain Events).
-  * `ValueObject` (أساس مقارنة كائنات القيمة).
-  * `Result<T>` و `Error` (أساس الـ Result Pattern).
-* وضع هذه التجريدات المشتركة في `BuildingBlocks.Domain` يمنع تكرار الكود ويضمن تطبيق نفس معايير الـ Clean Architecture في كل Microservice.
-
----
-## 8. لماذا نستخدم DDD في خدمة الـ Identity؟ وهل يعتبر Over-Engineering؟
-
-### ❓ السؤال:
-> *"لماذا سنستعمل DDD في خدمة Identity؟ أليس يعتبر Over-Engineering لخدمة وظيفتها الأساسية إدارة المستخدمين؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-#### أ. متى يكون DDD عبارة عن Over-Engineering بنسبة 100%؟ ❌
-لو كانت خدمة `Identity` عبارة عن تطبيق CRUD بسيط يخزن فقط `FirstName` و `LastName` و `Email` بدون أي قواعد معقدة. في هذه الحالة، استخدام DDD الكامل هو تعقيد غير مبرر.
-
-#### ب. لماذا نحتاج DDD عملي (Pragmatic DDD) في متجرنا (Multi-Vendor Marketplace)؟ ✅
-لأن خدمة الـ Identity في نظامنا تحتوي على **قواعد بزنس حساسة (Complex Invariants)** لا يمكن حمايتها بالـ CRUD البسيط:
-1. **قاعدة العنوان الافتراضي (Default Address Invariant):**
-   * العميل يمتلك عدة عناوين شحن، ولكن **يجب أن يكون هناك عنوان افتراضي واحد فقط في نفس اللحظة**.
-   * في الـ CRUD العادي: قد ينسى المبرمج في أحد الـ Endpoints تعديل باقي العناوين فيصبح لدى العميل عنوانان افتراضيان (Data Corruption).
-   * مع الـ DDD (Aggregate Root): الكيان `UserProfile` هو المسؤول الوحيد عن إدارة عناوينه ويضمن تحويل باقي العناوين إلى `false` ذرياً عند تعيين عنوان افتراضي جديد.
-2. **دورة حياة التاجر وتأهيله (Seller Onboarding State Machine):**
-   * التاجر يمر بدورة حياة قانونية: `PendingApproval -> Active -> Suspended -> Rejected`.
-   * التاجر لا يتحول إلى `Active` إلا بتوفر رقم ضريبي صالح وموافقة الإدارة، وتغيير حالته يطلق حدثاً حاسماً (`SellerApprovedEvent`) لتفعيل متجره في باقي الخدمات.
-3. **كائنات القيمة (Value Objects):**
-   * مثل `PhoneNumber` و `TaxId` لمنع تكرار التحقق في كل طبقة وضمان صحة البيانات في الذاكرة دائماً.
-
-#### ج. الخلاصة: Pragmatic DDD مقابل Dogmatic DDD:
-نحن نرفض الـ DDD المعقد المتعصب (Dogmatic)، ونطبق **Pragmatic DDD** الذي يوفر:
-* **حماية الحالة (Encapsulation)** عبر Private Setters.
-* **حدود التجميع (Aggregate Boundaries)** لحماية سلامة البيانات.
-* **الـ Factory Methods** لضمان صحة الكائنات عند الإنشاء.
-
----
-
-## 9. لماذا نستخدم نمط `Result<T>` و `Error` بدلاً من رمي الـ Exceptions في معالجة أخطاء البزنس؟ وما هي المشاكل العميقة للـ Exceptions كـ Flow Control؟
-
-### ❓ السؤال:
-> *"لماذا لا نستخدم `throw new BusinessException(...)` في التحقق من الشروط وقواعد البزنس كما يفعل الكثيرون، ونفضل بدلاً من ذلك إرجاع كائن `Result<T>` ونمط `Result.Failure(Error)`؟ ما هي الأسباب الهندسية العميقة وتأثيرها على الأداء ونظافة المعمارية؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-في هندسة الأنظمة الإنتاجية عالية الأداء (High-Performance Production Backend)، استخدام الاستثناءات (Exceptions) للتحكم في مسار البزنس العادي (Flow Control) يُعد **Anti-pattern معماري خطير**. 
-
-إليك الأسباب الهندسية الـ 5 الجوهرية لاعتماد **Result Pattern**:
-
----
-
-#### 1. استنزاف الـ CPU والـ Memory Allocation (تكلفة الـ Stack Trace المرتفعة جداً):
-* **ماذا يحدث داخلياً عند كتابة `throw new Exception`؟**
-  1. يقوم محرك الدوت نت (CLR) بإيقاف المسار التنفيذي الطبيعي للمعالج.
-  2. يتم تخصيص كائن في الـ Heap مع كل إطارات المكدس (Stack Frames).
-  3. يقوم الـ CLR بما يُعرف بـ **Stack Walking & Unwinding**، حيث يرجع للخلف عبر كافة التوابع حتى يجد كتلة `catch` مطابقة، ويقوم بالتقاط أرقام الأسطر وأسماء الملفات لتجميع الـ Stack Trace.
-* **الأثر العملي في السوبرماركت:**
-  * رمي الـ Exception أبطأ بما يعادل **100x إلى 1000x ضعف** مقارنة بإرجاع كائن خفيف.
-  * في أنظمة الـ POS، يتعامل النظام مع مئات آلاف عمليات قراءة الباركود والتحقق من الورديات. إذا استخدمنا `throw new ProductNotFoundException` أو `throw new ShiftClosedException` مع كل إدخال خاطئ لكاشير أو صنف نفد من الرف، فإننا نسبب اختناقاً في المعالج وزيادة حادة في نشاط الـ Garbage Collector (GC Pressure).
-  * **مع نمط `Result<T>`:** لا يوجد أي `throw` أو تجميع لـ Stack Trace؛ هو مجرد كائن قيمة (Struct/Record) خفيف جداً يمر في الذاكرة بزمن يقترب من الصفر نانوثانية.
-
----
-
-#### 2. انتهاك مبدأ شفافية التوقيع (Breaking Signature Transparency & Honest APIs):
-* انظر للفرق بين التوقيعين البرمجيين:
-
-```csharp
-// ❌ دالة غير أمينة (Dishonest API)
-public Order CreateOrder(CustomerId customerId, List<OrderItem> items);
-```
-* من قراءة التوقيع، توحي الدالة للمطور بأنها **تُرجع دائماً كائن `Order` سليم بنسبة 100%**. لكنها في الواقع تخفي بداخلها استثناءات غير معلنة:
-  * قد ترمي `CustomerNotFoundException`.
-  * قد ترمي `InsufficientStockException`.
-  * قد ترمي `ShiftInactiveException`.
-* المطور الذي يستدعي هذه الدالة مجبر على قراءة كل سطر في كودها الداخلي، أو التخمين، أو وضع كتلة `catch (Exception ex)` عامة تطمس كل الأخطاء!
-
-```csharp
-// ✅ دالة أمينة وشفافة (Honest API عبر Result Pattern)
-public Result<Order> CreateOrder(CustomerId customerId, List<OrderItem> items);
-```
-* التوقيع يصرخ في وجه المطور بوضوح: **"أنا قد أنجح وأعيد لك Order، أو قد أفشل وأعيد لك خطأ Error، وعليك التعامل مع الحالتين بشكل صريح قبل استخدام النتيجة"**.
-
----
-
-#### 3. الفرق الجوهري بين خطأ البزنس المتوقع والانهيار الاستثنائي للنظام:
-في هندسة البرمجيات، نقسم الفشل إلى فئتين لا يجوز الخلط بينهما:
-
-| وجه المقارنة | خطأ البزنس المتوقع (Expected Domain Failure) | الانهيار الاستثنائي (Exceptional System Failure) |
-| :--- | :--- | :--- |
-| **المعنى** | حالة متوقعة تحدث أثناء سير العمل الطبيعي وتخضع لقواعد البزنس. | حادث كارثي غير متوقع يمنع النظام من إكمال وظيفته الأساسية. |
-| **أمثلة** | - الرصيد غير كافٍ.<br>- الكاشير أدخل PIN خاطئ.<br>- الوردية مغلقة بالفعل.<br>- المنتج غير متوفر. | - قاعدة البيانات انهارت (PostgreSQL Down).<br>- خطأ شبكي مفاجئ في الاتصال بـ Keycloak.<br>- `NullReferenceException` بسبب خطأ برمجي (Bug).<br>- نفاد الذاكرة (OutOfMemory). |
-| **طريقة المعالجة** | إرجاع `Result.Failure(Error)` صريح بدون Exceptions. | استخدام `throw` التقليدي، ويلتقطه `GlobalExceptionHandler` لإرجاع 500 وتسجيل Crash Log. |
-| **هل يمثل خللاً في النظام؟** | لا، هذا سلوك سليم ومطلوب للنظام. | نعم، خلل يتطلب تدخل مهندسي الصيانة فوراً. |
-
----
-
-#### 4. محاربة Anti-Pattern: "استخدام الاستثناءات للتحكم بالتدفق" (Exceptions for Flow Control):
-* في مبادئ Clean Architecture و Pragmatic Programming، القاعدة الأولى هي:
-  > **"Exceptions should be exceptional."**
-* استخدام `throw` لنقل التحكم بين الطبقات يشبه تعليمة `GOTO` القديمة سيئة السمعة؛ يقفز التنفيذ عبر طبقات النظام ويكسر تسلسل الأكواد المتوقع، مما يجعل كتابة الـ Unit Tests شاقة وصعبة التتبع.
-
----
-
-#### 5. التكامل النظيف مع معيار RFC 7807 (ProblemDetails) في ASP.NET Core:
-* نمط `Result` يدمج كائن `Error` غني يحتوي على:
-  * `Code`: كود خطأ مميز وفريد، مثل `Shifts.AlreadyClosed` أو `POS.InvalidBarcode`.
-  * `Description`: رسالة مفهومة توضح سبب الفشل بدقة.
-  * `Type`: تصنيف الخطأ (`Validation`, `NotFound`, `Conflict`, `Unauthorized`, `Forbidden`, `Failure`).
-* في طبقة الـ API، يتم تحويل الـ `Result` بأسلوب أنيق ومباشر إلى HTTP Status Codes مطابقة للمعايير بدون أي كتل `try-catch`:
-
-```csharp
-public static IResult ToProblemDetails(this Result result)
-{
-    if (result.IsSuccess)
-        throw new InvalidOperationException("Cannot convert successful result to problem details");
-
-    var error = result.Error;
-
-    var statusCode = error.Type switch
-    {
-        ErrorType.Validation => StatusCodes.Status400BadRequest,
-        ErrorType.NotFound => StatusCodes.Status404NotFound,
-        ErrorType.Conflict => StatusCodes.Status409Conflict,
-        ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
-        ErrorType.Forbidden => StatusCodes.Status403Forbidden,
-        _ => StatusCodes.Status500InternalServerError
-    };
-
-    return Results.Problem(
-        statusCode: statusCode,
-        title: error.Code,
-        detail: error.Description,
-        extensions: new Dictionary<string, object?> { ["errorType"] = error.Type.ToString() }
-    );
-}
-```
-
----
-
-## 10. كيف نصمم نظام الصلاحيات المتقدم (Hybrid RBAC / Fine-Grained Permissions: `resource:action:scope`) ولماذا نفصل بين أدوار Keycloak وأذونات التطبيق؟
-
-### ❓ السؤال:
-> *"في Keycloak سننشئ أدواراً عليا مثل Cashier و StoreManager، بينما في تطبيقي أريد إعطاءه الأذونات اللازمة مثل (فتح وإغلاق الورديات، تنفيذ عمليات البيع ومسح الباركود، الموافقة على الخصومات). هل من الصحيح صياغتها بنمط `resource:action:scope` مثل `users:read:own` وجمعها في مجموعات أذونات وإسنادها للأدوار؟ وما هي المزايا المعمارية لهذا الفصل؟"*
-
-### 💡 الإجابة المعمارية المفصلة:
-
-فكرتك هذه تمثل **المعيار الذهبي (Gold Standard) في معمارية الأنظمة المؤسسية (Enterprise Architecture)**، ويُطلق عليها اسم **النمط الهجين لإدارة الوصول (Hybrid RBAC / Claims-Based Authorization)**.
-
----
-
-#### أ. المشاكل القاتلة لوضع الصلاحيات الدقيقة بالكامل داخل Keycloak:
-
-1. **معضلة تضخم التوكن (Token Bloat):**
-   * نظام السوبرماركت المتكامل يحتوي على أكثر من 150 إلى 300 إذن تشغيلي دقيق.
-   * لو قمنا بتخزين كل هذه الصلاحيات التفصيلية كـ Roles داخل Keycloak وتم حقنها في كل JWT Access Token، سيتجاوز حجم التوكن **15-20 كيلوبايت**.
-   * هذا الحجم الضخم سيرسل مع كل مسح باركود وكل طلب HTTP من شاشات الكاشير، مما يستنزف سعة الشبكة (Bandwidth) ويتجاوز حدود حجم الـ HTTP Headers في خوادم مثل NGINX و Kestrel.
-2. **انتهاك فصل المسؤوليات (Violating Separation of Concerns):**
-   * وظيفة **Keycloak** الأساسية هي: **الهوية والمصادقة (Identity & Authentication)** وإدارة بيانات الدخول، والتأكد من أن "أحمد هو فعلاً الكاشير التابع للفرع 01".
-   * وظيفة **تطبيق الـ POS** هي: **التفويض والبزنس (Authorization & Business Logic)** ومعرفة ما إذا كان مسموحاً لأحمد بتعليق هذه الوردية بالذات في هذا التوقيت.
-3. **الجمود وعدم القدرة على التعديل اللحظي (No Dynamic Updates without Re-login):**
-   * لو خُزنت الصلاحيات داخل الـ JWT الصادر من Keycloak، وقام مدير الفرع الآن بتجريد كاشير من صلاحية `discounts:override:branch`:
-   * **لن تنعكس هذه الإزالة إطلاقاً** على شاشة الكاشير إلا بعد تسجيل خروجه أو انتهاء صلاحية التوكن (15 دقيقة)!
-   * بينما عند إدارة الصلاحيات داخل التطبيق مع طبقة كاشينج (Redis / In-Memory Cache)، فإن أي تعديل يجريه مدير النظام يُلغي كاش الصلاحيات فوراً في نفس الثانية (**Zero-delay Revocation**).
-
----
-
-#### ب. المعمارية الهجينة المعتمدة (Hybrid Architecture Division):
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 1. خادم الهوية (Keycloak - Identity & Broad Roles)          │
-│    • التحقق من كود الموظف وكلمة المرور / الـ PIN.           │
-│    • إصدار الـ Access Token موقّعاً بـ RS256.               │
-│    • يحتوي فقط على الأدوار الوظيفية الكبرى (6 أدوار):       │
-│      [SystemAdmin, StoreManager, Cashier,                   │
-│       InventoryManager, PurchasingManager, Accountant]      │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ JWT (Role: Cashier, Sub: User-Guid)
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 2. خدمة الهوية بالتطبيق (Identity Service - Fine-Grained)    │
-│    • جدول الصلاحيات الدقيقة: Permissions (resource:action:scope) │
-│    • جدول مجموعات الصلاحيات: PermissionGroups               │
-│    • جدول الربط بين الأدوار والمجموعات: RolePermissionGroups │
-│    • التخزين المؤقت فائق السرعة: In-Memory / Redis Cache   │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ Permissions Matrix (< 0.1ms)
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│ 3. خدمات البزنس (Sales, Inventory, Operations)              │
-│    • فحص سريع وموضعي للسياسة (Policy-Based Authorization)   │
-│    • [HasPermission("shifts:open:own")]                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-#### ج. تفكيك نمط التسمية الاحترافي `resource:action:scope`:
-
-صيغة `resource:action:scope` مستوحاة من كبرى محركات الصلاحيات العالمية (مثل AWS IAM و Google Cloud IAM و Auth0):
-
-| الجزء | وظيفته المعمارية | أمثلة تطبيقية من واقع السوبرماركت |
-| :--- | :--- | :--- |
-| **Resource** | الكيان أو المورد التشغيلي المستهدف في النظام. | `shifts`, `sales`, `inventory`, `products`, `discounts`, `suppliers`, `reports` |
-| **Action** | نوع الفعل أو العملية البرمجية المسموح بتنفيذها. | `read`, `create`, `update`, `delete`, `open`, `close`, `suspend`, `override`, `approve` |
-| **Scope** | النطاق أو الحدود المكانية/البيانية للعملية. | `own` (ما يخص الموظف نفسه فقط)<br>`branch` (داخل فرعه فقط)<br>`all` (على مستوى كامل الفروع والشركة) |
-
----
-
-#### د. مطابقة مصفوفة الأدوار الستة المستخرجة من `SYSTEM_SPECIFICATION_AND_ROLES.md`:
-
-بناءً على وثيقة مواصفات النظام المعتمدة، هذه هي أمثلة الصلاحيات التفصيلية المربوطة بكل دور عبر مجموعات الأذونات:
-
-1. **دور الكاشير (Cashier):**
-   * `shifts:open:own` (فتح ورديته الخاصة).
-   * `shifts:close:own` (إغلاق وتسليم ورديته).
-   * `shifts:suspend:own` (تعليق الوردية مؤقتاً).
-   * `sales:scan:terminal` (مسح الباركود وإضافة الأصناف).
-   * `sales:checkout:terminal` (إتمام عملية البيع وقبض النقدية أو البطاقة).
-   * `sales:receipt:print` (طباعة الإيصال والفاتورة المبسطة).
-
-2. **دور مدير الفرع (Store Manager):**
-   * `shifts:emergency_close:branch` (إغلاق أي وردية طارئة داخل فرعه).
-   * `shifts:reconcile:branch` (مراجعة واعتماد تسوية عجز/فائض الوردية).
-   * `discounts:override:branch` (الموافقة على تخفيض يدوي استثنائي أو إرجاع بدون فاتورة).
-   * `staff:view:branch` (استعراض موظفي فرعه وجداولهم).
-   * `inventory:request_transfer:branch` (طلب تحويل بضائع من فرع آخر أو من المستودع العام).
-
-3. **دور مدير المخزون (Inventory Manager):**
-   * `products:create:all` & `products:update:all` (إدخال أصناف وتعديل بياناتها والباركود).
-   * `inventory:audit_task:manage` (إنشاء مهمات الجرد الدوري وإدخال العد الفعلي).
-   * `inventory:stock_transfer:execute` (تنفيذ وشحن بضاعة منقولة لفرع آخر).
-   * `inventory:labels:print` (طباعة ملصقات الأسعار والباركودات للرفوف).
-
-4. **دور مدير المشتريات (Purchasing Manager):**
-   * `suppliers:manage:all` (تسجيل الموردين وتقييم أدائهم).
-   * `purchase_orders:create:all` (إنشاء ومتابعة أوامر الشراء PO).
-   * `goods_receipt:record:all` (إثبات استلام البضائع وفحص التوالف وفروقات الكمية).
-   * `supplier_invoices:request_payment:all` (طلب اعتماد دفعة مالية للمورد).
-
-5. **دور المحاسب والمدقق المالي (Accountant):**
-   * `payments:supplier_payout:approve` (اعتماد وتحويل مستحقات الموردين).
-   * `reports:financial:all` (استخراج تقارير الأرباح والخسائر والإقرارات الضريبية ZATCA).
-   * `audit_logs:financial:read` (فحص وتدقيق كل الحركات المالية وتاريخ التعديلات).
-
-6. **دور مدير النظام (System Admin):**
-   * `users:manage:all` (إدارة الحسابات الشاملة للمنصة).
-   * `branches:manage:all` (افتتاح الفروع وتعديل ساعات العمل).
-   * `system:settings:configure` (إعدادات النظام والنسخ الاحتياطي ومسارات التكامل).
-
----
-
-#### هـ. كيف يتم التحقق من الصلاحيات بأداء خارق (<0.1ms) أثناء عمل الكاشير؟
-1. الكاشير يرسل طلبه ومعه الـ JWT الذي يحمل دوره فقط (`role: Cashier`).
-2. الـ API تستخدم ميزة `IAuthorizationRequirement` المخصصة في ASP.NET Core:
-   `[HasPermission("sales:checkout:terminal")]`
-3. يقوم الـ Handler بفحص الصلاحيات من كاش الذاكرة الداخلي (In-Memory Dictionary أو Redis) المحمل مسبقاً لمجموعة أدوار الكاشير.
-4. العملية لا تتطلب أي استعلام لقاعدة البيانات ولا أي اتصال شبكي بخادم Keycloak، وتتم في أجزاء من الميكروثانية!
-
----
-
-## 11. التشريح الهندسي الدقيق لنمط Result Pattern ومفاهيم C# الحديثة (.NET 10)
-
-> **📌 مرحباً بالأسئلة التي تفتح الأبواب لعالم الاحتراف الحقيقي! 👏**  
-> هذه الأسئلة ليست مجرد استفسارات عادية، بل هي **تفكيك للغة C# الحديثة (.NET 10) ولأدق تفاصيل معمارية الـ Clean Architecture وتصميم الأنظمة المؤسسية (Enterprise Backend)**.
-
----
-
-### ❓ الأسئلة الهندسية كما وردت:
-> 1. *ملف `ErrorType`: استعملت `Enum` جميل لكن بعدها أضفت `= رقم معين`، هكذا ضيعت فرصة الاستفادة من الـ Enum؛ مفترض نعتمد على الكلمة نفسها. تخيل فرضا جاء مبرمج يبغى يستعمل `NotFound` وبدل ما يكتب 2 كتب 5، أو تخيل جئت تضيف نوعاً جديداً وكتبته أول شيء؟ اعتمد على الكلمة نفسها إلا لو لديك سبب منطقي قوي.*
-> 2. *ملف `Error`:*
->    * *إيش يعني `sealed`؟*
->    * *استعملت `record Error`، هل كلمة `Error` كلمة محجوزة أم عادية؟*
->    * *إيش يعني الأسطر هذه وإيش وظيفتهم مع الباراميتر:*
->      `public static readonly Error None = new(string.Empty, string.Empty, ErrorType.Failure);`
->      `public static readonly Error NullValue = new("General.NullValue", "The specified result value is null.", ErrorType.Failure);`
->      *وليش كتبت `Error None`؟ إيش تقصد بكلمة `Error` قبل اسم المتغير؟*
->    * *كتبت `public string Code { get; }` و `public string Description { get; }` و `public ErrorType Type { get; }`؛ ماذا عن `set`؟ كيف ستستعمل هذه المتغيرات؟*
->    * *اشرح: `public static Error Failure(string code, string description) => new(code, description, ErrorType.Failure);` ليش استعملت كلمة `new`؟*
-> 3. *ملف `Result`:*
->    * *إيش يعني `internal`؟*
->    * *إيش تعني الشروط هذه:*
->      `if (isSuccess && error != Error.None) throw new InvalidOperationException("A successful result cannot be initialized with an error.");`
->      `if (!isSuccess && error == Error.None) throw new InvalidOperationException("A failure result must be initialized with a non-empty error.");`
->    * *الكلمة `IsSuccess = isSuccess;` من أين أتت؟*
->    * *اشرح هذه الدوال:*
->      `public static Result Failure(Error error) => new(false, error);`
->      `public static Result<TValue> Success<TValue>(TValue value) => new(value, true, Error.None);`
->      `public static Result<TValue> Failure<TValue>(Error error) => new(default, false, error);`
->      `public static Result<TValue> Create<TValue>(TValue? value) => value is not null ? Success(value) : Failure<TValue>(Error.NullValue);`
-> 4. *ملف `ResultExtensions`:*
->    * *إيش الفائدة منه؟ إيش المشكلة التي يحلها؟*
->    * *إيش الطلاسم هذه:*
->      `public static TOutput Match<TOutput>(this Result result, Func<TOutput> onSuccess, Func<Error, TOutput> onFailure)`
->    * *يوجد دوال `Match`, `Ensure`, `Map`, `Bind`... اشرحهن.*
->    * *هل تطبيقنا لـ task هذا من الـ Best Practices وهل تم ذكره في docs التابع لـ Microsoft؟ أعطني الرابط بالضبط.*
-> 5. *ملف `ResultT`: إيش الغرض منه؟*
-> 6. *ألا تفكر كأننا بنينا أكواد Over-engineered؟*
-
----
-
-### 💡 الإجابة الهندسية والمعمارية الشاملة:
-
----
-
-### 1. ملف `ErrorType.cs`: لماذا وضعنا أرقاماً صريحة `= 0, = 1`؟ ألم نضيع قوة الـ Enum؟
-
-```csharp
-public enum ErrorType
-{
-    Failure = 0,
-    Validation = 1,
-    NotFound = 2,
-    Conflict = 3,
-    Unauthorized = 4,
-    Forbidden = 5
-}
-```
-
-#### 🔍 كيف يعمل الـ Enum داخلياً في لغة C#؟
-1. **في الكود اليومي: مستحيل وممنوع أن يكتب المبرمج أرقاماً!**
-   * المبرمج يكتب دائماً الكلمة الصريحة بفضل ميزة الـ Type Safety في C#:
-     `ErrorType.NotFound` أو `ErrorType.Conflict`.
-   * الـ IDE والـ Compiler لا يسمحان لك بكتابة أرقام عشوائية هكذا، والمترجم يمنع أي عملية إسناد لرقم إلا بعملية تحويل صريحة (Explicit Casting).
-2. **إذاً، لماذا نضع نحن المهندسين الأرقام الصريحة `= 0, = 1, = 2` في الـ Enum؟**
-   * الـ Enum في C# يُخزن داخلياً في الذاكرة وفي قاعدة البيانات كـ **رقم (Integer)** لتوفير المساحة وسرعة البحث والـ Indexing.
-   * **كارثة الـ Default Enums بدون أرقام (The Hidden Trap / The Silent Index-Shift Bug):**
-     لو لم نكتب أرقاماً، يقوم C# تلقائياً بترقيمها بالترتيب من الصفر:
-     `Failure` تأخذ 0، `Validation` تأخذ 1، `NotFound` تأخذ 2.
-     **تخيل ماذا سيحدث لو جاء مبرمج بعد 6 أشهر وأضاف نوعاً جديداً في السطر الأول:**
-     ```csharp
-     public enum ErrorType
-     {
-         Unknown,    // أخذت 0 تلقائياً
-         Failure,    // زحفت وتغيرت من 0 إلى 1!
-         Validation, // زحفت وتغيرت من 1 إلى 2!
-         NotFound    // زحفت وتغيرت من 2 إلى 3!
-     }
-     ```
-     **النتيجة الكارثية:** كل السجلات القديمة المحفوظة في قاعدة البيانات بالرقم `2` على أنها `NotFound`، أو الرسائل المخزنة في Redis والـ Message Queue، ستتخبط وتتغير معانيها؛ فالخطأ الذي كان 404 سيعتبره النظام 400 (`Validation`)! وتحدث فوضى وفساد بيانات (Data Corruption).
-   * **الحل الهندسي للمحترفين:** تثبيت الأرقام الصريحة (`= 0, = 1, = 2`) يضمن أنه حتى لو قام مبرمج بإعادة ترتيب الأسطر أو إضافة نوع جديد في أي مكان، تظل الأرقام ثابتة تاريخياً ومحمية من التغير (**Explicit Enum Value Preservation**).
-3. **قاعدة التهيئة الصفرية في C# (Zero-Initialization):**
-   * في دوت نت، القيمة الافتراضية لأي Enum لم يُهيأ بعد في الذاكرة هي دائماً صفر (`default(ErrorType) == 0`).
-   * تحديد `Failure = 0` يضمن أن أي متغير لم يأخذ قيمة صريحة سيشير تلقائياً إلى الفشل العام، ولن يشير بالخطأ إلى `NotFound` أو `Unauthorized`.
-
----
-
-### 2. ملف `Error.cs`: تفكيك السطور كلمة بكلمة
-
-#### أ. ما معنى كلمة `sealed`؟
-```csharp
-public sealed record Error
-```
-* `sealed` في C# تعني: **"مغلق وممنوع الوراثة منه"**.
-* لا يمكن لأي كلاس آخر أن يكتب: `class MyError : Error`.
-* **لماذا؟**
-  1. **الأمان المعماري وحماية النطاق (Invariant Protection):** كائن الخطأ بسيط ومحدد، وهو كائن بيانات بحت (Data Carrier / Value Object). لا نريد لأحد أن يورثه ويضيف عليه خصائص عشوائية تكسر توحيد الأخطاء.
-  2. **أداء المترجم (JIT Optimization / Devirtualization):** عندما يعلم المترجم أن الكلاس `sealed`، يقوم بتسريع استدعاء الدوال وتجاوز جدول الـ VTable لأنه متأكد بنسبة 100% أنه لا يوجد كلاس ابن سيغير سلوكها أو يقوم بعمل Override.
-  3. **استقرار المساواة في الـ Records:** الـ `record` في C# يولد كود مقارنة تلقائي على أساس القيم والنوع (`EqualityContract`). الوراثة في الـ Records تسبب مشاكل عويصة في المقارنة، والختم بـ `sealed` يقضي على هذه الثغرة تماماً.
-
-#### ب. هل كلمة `Error` محجوزة في C#؟
-* **لا، كلمة `Error` ليست كلمة محجوزة (Keyword).**
-* هي مجرد اسم كلاس اخترناه ليعبر عن معنى الخطأ (تماماً مثل كلاس `User` أو `Branch`). الكلمات المحجوزة هي كلمات لغة البرمجة مثل `class, record, struct, return, if, new`.
-
-#### ج. ما معنى الأسطر الثابتة؟ ولماذا كتبنا `Error` قبل الاسم؟
-```csharp
-public static readonly Error None = new(string.Empty, string.Empty, ErrorType.Failure);
-public static readonly Error NullValue = new("General.NullValue", "The specified result value is null.", ErrorType.Failure);
-```
-1. **لماذا كلمة `Error` قبل الاسم؟**
-   * في C#، عندما تعرف متغيراً أو حقلاً، القاعدة العامة هي: `[محدد الوصول] [معدل السلوك] [نوع البيانات] [اسم المتغير] = [القيمة];`
-   * مثل: `public static readonly int MaxRetries = 3;` أو `string name = "Ali";`.
-   * هنا نوع البيانات (Type) هو الكلاس نفسه `Error`، واسم الحقل هو `None`.
-2. **ما وظيفة `Error.None`؟**
-   * عندما تنجح عملية (مثلاً تم حفظ الفرع بنجاح)، النتيجة `Result` لا تحمل أي خطأ.
-   * بدلاً من وضع `null` الذي يسبب انهيارات النظام، نستخدم نمطاً معمارياً شهيراً يُسمى **Null Object Pattern**: كائن جاهز وثابت يمثل "لا يوجد خطأ".
-3. **ما وظيفة `Error.NullValue`؟**
-   * خطأ قياسي جاهز يعاد تلقائياً لو حاول مبرمج تمرير قيمة `null` لنتيجة ناجحة.
-4. **ما معنى `public static readonly`؟**
-   * `static`: الكائن يعيش مرة واحدة فقط في الذاكرة طوال حياة السيرفر (Singleton في الذاكرة)، فلا ننشئ كائناً جديداً كل ثانية، مما يوفر الرام ويسرع المعالجة.
-   * `readonly`: مستحيل لأي كود خارجي تعديل قيمته أو استبدال المرجع.
-
-#### د. الخصائص: `public string Code { get; }` أين الـ `set`؟ وكيف نملؤها؟
-```csharp
-public string Code { get; }
-public string Description { get; }
-public ErrorType Type { get; }
-```
-* **أين الـ `set`؟** لا يوجد `set` عمداً!
-* **لماذا؟** لأننا نريد أن يكون كائن الخطأ **غير قابل للتعديل (Immutable)**؛ بمجرد إنشائه لا يمكن لأي جهة في النظام تغيير رمزه أو وصفه.
-* **كيف تُملأ هذه المتغيرات بدون `set`؟**
-  تُملأ حصراً عبر الـ **Constructor الخاص (Private Constructor)** عند لحظة إنشاء الكائن:
-  ```csharp
-  private Error(string code, string description, ErrorType type)
-  {
-      Code = code;
-      Description = description;
-      Type = type;
-  }
-  ```
-  في C#، الخصائص التي تملك `{ get; }` فقط (Getter-only Auto Properties) يمكن إعطاؤها قيمة داخل الـ Constructor فقط، وبعد انتهاء الـ Constructor تُقفل للأبد!
-* **الفائدة المعمارية الكبرى:** أمان تزامني مطلق (Thread Safety). إذا استعلم 100 كاشير في نفس اللحظة عن صنف غير موجود، فإنهم يتشاركون نفس كائن الخطأ في الرام بدون أي خطر لتضارب البيانات (Race Condition).
-* **كيف تُستخدم؟** يتم قراءتها فقط لعرض الرسالة للمستخدم في الـ Controller:
-  ```csharp
-  return Results.BadRequest(error.Description);
-  ```
-
-#### هـ. لماذا استعملنا كلمة `new` هكذا بدون اسم الكلاس؟
-```csharp
-public static Error Failure(string code, string description) =>
-    new(code, description, ErrorType.Failure);
-```
-* هذه ميزة في C# الحديثة (C# 9+) تُسمى **Target-Typed New Expressions**.
-* بدلاً من كتابة الاسم مرتين:
-  `return new Error(code, description, ...);`
-* يرى المترجم أن الدالة تعيد `Error` صراحة، فيسمح لك بكتابة `new(...)` مباشرة لتنظيف الكود من الحشو والتكرار دون خسارة أمان الأنواع.
-
----
-
-### 3. ملف `Result.cs`: الشروط المنطقية وسر `internal`
-
-```csharp
-public class Result
-{
-    protected internal Result(bool isSuccess, Error error)
-    {
-        if (isSuccess && error != Error.None)
-            throw new InvalidOperationException("A successful result cannot be initialized with an error.");
-
-        if (!isSuccess && error == Error.None)
-            throw new InvalidOperationException("A failure result must be initialized with a non-empty error.");
-
-        IsSuccess = isSuccess;
-        Error = error;
-    }
-
-    public bool IsSuccess { get; }
-    public bool IsFailure => !IsSuccess;
-    public Error Error { get; }
-}
-```
-
-#### أ. ما معنى كلمة `internal`؟
-* `protected internal`:
-  * `internal`: تعني أن هذا الـ Constructor **مسموح استدعاؤه فقط داخل نفس المشروع (مشروع `SuperMarket.BuildingBlocks`)**. لو كنا في مشروع `Sales` أو `Identity`، فلن يظهر له الـ Constructor المباشر (`new Result(...)`).
-  * `protected`: يسمح للكلاسات الوارثة (مثل `Result<TValue>`) بالوصول إليه عبر `base(...)`.
-* **الهدف المعماري:** إجبار جميع المطورين على استخدام الدوال النظيفة والآمنة: `Result.Success()` أو `Result.Failure(error)`، ومنع إنشاء حالات غير متسقة.
-
-#### ب. ما قصة الشروط المنطقية الصارمة (Invariants)؟
-* يفرض هذان السطران **منطق البزنس الصارم (Guaranteed Invariants)** ويمنعان التناقض البرمجي (Making Invalid States Unrepresentable):
-  1. **الشرط الأول:** مستحيل أن تقول لي "العملية ناجحة `isSuccess = true`" وفي نفس الوقت ترفق كائن خطأ `Error.NotFound`! إما نجاح أو خطأ.
-  2. **الشرط الثاني:** مستحيل أن تقول لي "العملية فشلت `isSuccess = false`" وفي نفس الوقت ترفق `Error.None` (لا يوجد خطأ)! إذا فشلت فيجب أن توضح للنظام وللكاشير لماذا فشلت.
-* هذا الفحص الفوري (Fail-Fast) يكتشف أي خلل برمجي فوراً أثناء الـ Unit Tests.
-
-#### ج. من أين أتت كلمة `IsSuccess = isSuccess;`؟
-* `IsSuccess` (بحرف كبير) هي الخاصية العامة الموجودة في السطر التالي:
-  `public bool IsSuccess { get; }`
-* و `isSuccess` (بحرف صغير) هو المتغير الممرر كـ Parameter في الكونستركتور:
-  `(bool isSuccess, Error error)`
-* الكود يقوم فقط بنسخ القيمة الممررة وتخزينها في الخاصية العامة ليراها باقي الكود.
-
-#### د. شرح دوال الإنشاء السريعة (Factory Methods):
-```csharp
-// 1. عملية نجحت بدون إرجاع بيانات (أمر Command مثل: إغلاق الوردية)
-public static Result Success() => new(true, Error.None);
-
-// 2. عملية فشلت (مثل: الوردية مغلقة بالفعل)
-public static Result Failure(Error error) => new(false, error);
-
-// 3. عملية نجحت وترجع كائناً (استعلام Query مثل: تم جلب بيانات الفرع)
-public static Result<TValue> Success<TValue>(TValue value) => new(value, true, Error.None);
-
-// 4. عملية فشلت وكانت تتوقع إرجاع كائن (مثل: لم يتم العثور على الصنف)
-public static Result<TValue> Failure<TValue>(Error error) => new(default, false, error);
-
-// 5. دالة ذكية تفحص بنفسها: لو الكائن موجود ترجع نجاح، لو null ترجع فشل فوراً!
-public static Result<TValue> Create<TValue>(TValue? value) =>
-    value is not null ? Success(value) : Failure<TValue>(Error.NullValue);
-```
-
----
-
-### 4. ملف `ResultT.cs`: ما الغرض منه؟
-
-* **`Result` العادية (Non-generic):** للعمليات التي ليس لها عائد من البيانات، بل مجرد إثبات للنجاح أو الفشل (Commands مثل: "حذف موظف"، "إغلاق وردية").
-* **`Result<TValue>` (Generic):** للعمليات التي **يجب أن تعيد بيانات عند النجاح** (مثل: `Result<Branch>` لإنشاء فرع، أو `Result<Product>` لجلب منتج بالباركود).
-* **الحماية العبقرية فيها:**
-  ```csharp
-  [NotNull]
-  public TValue Value => IsSuccess
-      ? _value!
-      : throw new InvalidOperationException("The value of a failure result cannot be accessed. Always check IsSuccess before reading Value.");
-  ```
-  لو كان هناك مطور مستعجل والعملية فاشلة، وحاول قراءة `result.Value`:
-  سيرمي الكود استثناءً فورياً صريحاً يقول له: **"توقف! العملية فاشلة ولا يوجد قيمة، افحص `IsSuccess` أولاً!"** وهذا يقضي على ثغرات الـ Null Reference تماماً.
-
----
-
-### 5. ملف `ResultExtensions.cs` وتفكيك "الطلاسم"! 🧙‍♂️
-
-```csharp
-public static TOutput Match<TOutput>(
-    this Result result,
-    Func<TOutput> onSuccess,
-    Func<Error, TOutput> onFailure)
-```
-
-هذه ليست طلاسم، بل هي أسلوب **البرمجة الوظيفية الحديثة (Functional C#)** ونمط **مسار السكة الحديدية (Railway-Oriented Programming - ROP)** الذي يجعل الكود سلساً ومقروءاً:
-
-```
-                  ┌──────────────┐      ┌──────────────┐
-  المدخلات ───►───│ الخطوة الأولى│───►──│ الخطوة الثانية│───►─── نتيجة ناجحة (Green Track)
-                  └──────┬───────┘      └──────┬───────┘
-                         │ فشل                 │ فشل
-                         ▼                     ▼
-                  ═════════════════════════════════════════════► نتيجة فاشلة (Red Track)
-```
-
-#### أ. ما هي هذه المصطلحات؟
-1. **`this Result result`:**
-   * كلمة `this` قبل أول باراميتر في كلاس `static` تعني: **Extension Method (دالة توسعة)**.
-   * تجعل الدالة تظهر تلقائياً كأنها جزء من الكائن نفسه: `result.Match(...)`.
-2. **`Func<TOutput>`:**
-   * كلمة `Func` في C# تعني: **"مؤشر دالة (Delegate) أمرره لك كـ Parameter لتقوم بتشغيله"**.
-   * `onSuccess`: دالة تشغلها لو كانت النتيجة ناجحة.
-   * `onFailure`: دالة تأخذ كائن الخطأ `Error` وتشغلها لو كانت النتيجة فاشلة.
-3. **`TOutput`:**
-   * نوع الناتج الذي ستعيده (مثلاً: رد HTTP `IResult` في الـ API Controller).
-
-#### ب. انظر كيف تختصر وتجمل الكود في الـ Controllers:
-
-**❌ بدون دالة `Match` (الكود التقليدي الممل والمليء بالـ if-else):**
-```csharp
-var result = await _sender.Send(command);
-if (result.IsSuccess)
-{
-    return Results.Ok(result.Value);
-}
-else
-{
-    return Results.BadRequest(result.Error);
-}
-```
-
-**✅ مع دالة `Match` (كود أنيق وممتع يجبر المبرمج على معالجة الخطأ والنجاح معاً):**
-```csharp
-var result = await _sender.Send(command);
-
-return result.Match(
-    branch => Results.Ok(branch),          // في حال النجاح
-    error  => Results.BadRequest(error)    // في حال الفشل
-);
-```
-
-#### ج. ما وظيفة الدوال الأخرى (`Ensure`, `Map`, `Bind`)؟
-* **`Ensure` (التحقق الشرطي):** للتأكد من شرط إضافي:
-  `result.Ensure(order => order.Total > 0, OrderErrors.ZeroTotal);`
-  إذا كان مجموع الفاتورة 0 أو سالب، يحول النتيجة تلقائياً إلى فشل!
-* **`Map` (التحويل):** لتحويل القيمة من شكل لآخر داخل النتيجة الناجحة (مثلاً تحويل كائن `Branch` إلى `BranchDto`) دون الحاجة لفك التغليف يدوياً.
-* **`Bind` (الربط التسلسلي):** لربط عمليتين متتاليتين تعيدان `Result` دون كتابة كتل `if` متداخلة؛ فإذا فشلت الأولى يتوقف التنفيذ فوراً (Short-Circuiting) ولا يتم تشغيل الثانية.
-
----
-
-### 6. هل هذا التطبيق من الـ Best Practices؟ وهل ذكرته مايكروسوفت؟
-
-**نعم، 100%! وهو المعيار المعتمد لدى كبار مهندسي ومطوري مايكروسوفت حول العالم.**
-
-📚 **التوثيق والمصادر الرسمية لمايكروسوفت (Microsoft Learn & GitHub):**
-
-1. **قواعد مايكروسوفت الرسمية للأداء وعدم استخدام الـ Exceptions للتحكم بالمسار:**
-   * 🔗 [Microsoft Design Guidelines: Exceptions and Performance](https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/exceptions-and-performance)
-   * تنص مايكروسوفت صراحة:
-     > *"Do not use exceptions for the normal flow of control... For operations that can fail in normal scenarios, consider returning a Result or Try pattern."*
-2. **مشروع مايكروسوفت المرجعي للـ Microservices المعمارية (`eShop` على GitHub):**
-   * 🔗 [Microsoft Architecture: eShop on Containers / .NET eShop](https://github.com/dotnet/eShop)
-   * إذا فتحت الكود المصدري الرسمي لشركة مايكروسوفت لمشروع **eShop** المرجعي للـ Microservices، ستجد أنهم يستخدمون نمط **`Result` و `Result<T>`** في كافة الخدمات والأوامر للتعامل مع أخطاء البزنس بدلاً من رمي الاستثناءات!
-3. **توثيق مايكروسوفت لمعالجة الأخطاء بمعيار RFC 7807 (ProblemDetails):**
-   * 🔗 [Microsoft Learn: Handle errors in ASP.NET Core web APIs](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling)
-4. **دليل معمارية المايكروسيرفس و DDD الرسمي من Microsoft:**
-   * 🔗 [Microsoft Architecture eBook: Domain Events & Error Handling](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/domain-events-design-implementation)
-
----
-
-### 7. سؤال المليون دولار: "ألا تفكر كأننا بنينا أكواد Over-engineered؟" 🤔
-
-بصفتي الـ Senior Architect وشريكك التقني، أحب جداً هذا السؤال! الشك في التعقيد الزائد هو علامة مهندس ناضج ومحترف.
-
-#### إجابتي الصريحة لك: **قطعاً لا! هذا ليس Over-engineering على الإطلاق، وإليك الدليل الرياضي والعملي:**
-
-1. **حجم الكود بالكامل لا يتجاوز 100 سطر:**
-   كل ما كتبناه في `Result` و `Error` هو عبارة عن 100 سطر C# نظيف جداً في مكتبة مشتركة واحدة (`SuperMarket.BuildingBlocks`).
-2. **ما الذي يوفره علينا هذا الكود الصغير؟**
-   * يوفر علينا كتابة **أكثر من 50 كلاس Exception مخصص** (`BranchNotFoundException`, `PinInvalidException`, `ShiftClosedException`, `StockZeroException`...).
-   * يوفر علينا كتابة **عشرات كتل `try-catch` المكررة** في كل Controller و Handler.
-   * يوفر علينا استهلاك الـ CPU والـ Memory في السيرفر أثناء عمليات الكاشير السريعة في أوقات الذروة.
-3. **متى يكون هذا النمط Over-engineering فعلاً؟**
-   لو قمنا ببناء نظام وظيفي معقد جداً أو جلبنا مكتبات مثل `LanguageExt` تحتوي على 40 دالة مثل `BiFold`, `Traverse`, `MonadTransformers` واستوردنا مفاهيم رياضية وظيفية معقدة لا يفهمها فريق العمل.
-   أما ما بنيناه فهو **Minimal Pragmatic Result Pattern**: يحتوي فقط على `IsSuccess`, `Error`, و `Value`، وأي مبرمج يفهمه ويستخدمه بسهولة تامة من أول نظرة!
-
----
-
-## ❓ السؤال 12: تشريح بوابة التحقق المركزية (ValidationPipelineBehavior)
-> **"لماذا صممنا كلاس ValidationPipelineBehavior ونحن لم نبنِ أي خدمة بعد؟ وكيف يتحقق من الطلبات، وما هي المقايضات الهندسية بداخله؟"**
-
-### 1. القصة الهندسية: بوابات التفتيش الأمني في المطار الدولي
-تخيل أننا في مرحلة **بناء مطار دولي جديد**. أرض المطار ما زالت خالية، ولم تصل أي طائرة بعد، ولم يأتِ أي مسافر. 
-لكن قبل أن نفتح المطار، قمنا بتركيب **بوابات التفتيش الأمني وجهاز الأشعة السينية (X-Ray Scanner)** عند مدخل الصالة.
-
-هذه البوابات مبرمجة على قانون واحد صارم:
-> **"أي مسافر يدخل ومعه حقيبة، تُمرر الحقيبة على جهاز الفحص. إذا وُجد بها ممنوعات، يُمنع من الدخول فوراً ويُعاد من حيث أتى دون أن يدخل صالة المغادرة ودون أن يركب الطائرة."**
-
-هذا هو بالضبط **`ValidationPipelineBehavior`**:
-* نحن لم نبنِ خدمات مثل `Identity` أو `Sales` بعد.
-* لكن عندما نبدأ غداً ببناء خدمة `Identity`، سننشئ أمراً اسمه:
-  `RegisterUserCommand(string Username, string Password, string Role)`
-* ونكتب بجانبه ملف شروط باستخدام مكتبة `FluentValidation` اسمه `RegisterUserCommandValidator`:
-  - اسم المستخدم لا يقل عن 3 أحرف.
-  - كلمة المرور لا تقل عن 8 خانات.
-
-**ماذا يحدث في الإنتاج بفضل هذا الكلاس؟**
-بمجرد أن يرسل الـ Controller الطلب إلى MediatR، تلتقطه "بوابة التفتيش" **تلقائياً**:
-1. إذا كانت البيانات سليمة: تفتح له الباب ليدخل إلى الـ Handler ويكتب في قاعدة البيانات.
-2. إذا كان الباسورد 4 خانات فقط: البوابة توقفه فوراً وترجع `Result.Failure` مع كود `General.Validation`، **دون أن يدخل الـ Handler، ودون أن يفتح اتصالاً بقاعدة البيانات أصلاً!**
-3. **المكسب المعماري:** لن تضطر أبداً لكتابة سطر واحد للتحقق اليدوي داخل أي Controller أو Handler تبنيه في أي خدمة مستقبلاً.
-
-### 2. التشريح البرمجي والمقايضات (Technical Breakdown & Trade-Offs):
-* **التنفيذ المتوازي عبر `Task.WhenAll`:**
-  إذا كان للأمر الواحد أكثر من Validator (مثلاً فاحص لهيكل البيانات، وفاحص لقواعد الفرع)، فإن `Task.WhenAll` تشغل جميع الفاحصين في نفس الوقت بدلاً من تشغيلهم تسلسلياً، مما يقلل زمن الاستجابة في أنظمة الـ POS.
-* **الإيقاف الفوري (Short-Circuiting):**
-  إذا كان عدد الأخطاء `failures.Count > 0`، لا يستدعي الكود `next()` إطلاقاً، مما يوفر استهلاك خيوط المعالجة والـ CPU في معالجة طلبات فاسدة.
-* **مصنع النتائج للأنواع العامة (Result Factory via Reflection):**
-  بما أن الـ Pipeline يخدم أي نوع طلب `TRequest` وأي نوع رد `TResponse`، نحتاج لمعرفة هل الرد هو `Result` أم `Result<T>` لإنشاء كائن الفشل المناسب. يتم استخدام Reflection مع MethodInfo لاستدعاء `Result.Failure(error)` بنوع القيمة المناسب بدقة تامة.
-
----
-
-## ❓ السؤال 13: الفرق المعماري الجوهري: Domain Events vs Integration Events
-> **"ما هو الفرق بين أحداث الدومين وأحداث التكامل؟ وما فائدة DispatchDomainEventsInterceptor ولماذا لا ننشر الأحداث يدوياً؟"**
-
-```mermaid
-flowchart TD
-    subgraph SalesService [خدمة المبيعات - Sales Microservice]
-        Entity[Invoice AggregateRoot] -- "1. يضيف حدثاً داخلياً" --> DomEvt["InvoiceIssuedDomainEvent (Domain Event)"]
-        DomEvt -- "2. يُنشر داخلياً عبر MediatR" --> Interceptor[DispatchDomainEventsInterceptor]
-        Interceptor -- "In-Process (داخل نفس الذاكرة)" --> LocalHandler[SalesStatisticsHandler]
-        Interceptor -- "3. حفظ في جدول" --> OutboxTable[(Outbox Table)]
-    end
-
-    subgraph MessageBroker [ناقل الرسائل - RabbitMQ / Kafka]
-        OutboxMsg["InvoicePaidIntegrationEvent (Integration Event)"]
-    end
-
-    subgraph OtherServices [خدمات أخرى مستقلة]
-        Inventory[خدمة المخازن - Inventory]
-        Finance[خدمة الحسابات - Finance]
-    end
-
-    OutboxTable -- "Background Publisher (Out-of-Process)" --> OutboxMsg
-    OutboxMsg -- "عبر الشبكة (Network)" --> Inventory
-    OutboxMsg -- "عبر الشبكة (Network)" --> Finance
-```
-
-### 1. المقارنة المعمارية الفاصلة:
-* **Domain Event (أحداث النطاق الداخلي):**
-  - **النطاق:** داخل نفس الميكروسيرفيس ونفس العملية والذاكرة (In-Process / Same Process Memory).
-  - **الأداة:** يتم نشره محلياً عبر **MediatR** (`IPublisher.Publish`).
-  - **الهدف:** إخطار أجزاء أخرى داخل نفس الخدمة بما حدث (مثال: عند إصدار الفاتورة، يقوم معالج محلي بحساب مجموع مبيعات الكاشير لليوم).
-  - **المعاملة (Transaction):** يحدث ضمن نفس الـ Unit of Work في قاعدة البيانات.
-* **Integration Event (أحداث التكامل الخارجي):**
-  - **النطاق:** ينتقل **عبر الشبكة بين خدمات مختلفة ومستقلة تماماً (Cross-Microservices / Out-of-Process)**.
-  - **الأداة:** يتم نشره عبر **Message Broker** مثل RabbitMQ أو Kafka أو Azure Service Bus.
-  - **الهدف:** إخبار الخدمات الأخرى بالتغييرات (مثال: خدمة المبيعات تخبر خدمة **المخازن** بخصم 3 علب حليب، وتخبر خدمة **المالية** بإيداع المبلغ).
-  - **المعاملة (Transaction):** غير متزامن (Eventual Consistency) ويستخدم أنماطاً مثل Outbox Pattern لضمان عدم ضياع الرسائل.
-
-### 2. لماذا الاعتماد على `DispatchDomainEventsInterceptor`؟
-1. **منع النسيان البشري:** عدم إجبار المطور على تذكر كتابة `_mediator.Publish` يدوياً في كل Handler.
-2. **نقاء الـ Domain (Pure Domain):** تظل الكيانات خالية من أي حقن لخدمات مثل MediatR، ومسؤوليتها تقتصر على تسجيل ما حدث في `_domainEvents` داخلياً.
-3. **حماية التكرار (Idempotency Protection):** يتم مسح الأحداث `root.ClearDomainEvents()` **قبل** عملية النشر الفعلية لضمان عدم تكرار النشر إذا قام الـ Handler الفرعي باستدعاء `SaveChangesAsync` آخر داخل نفس السلسلة.
-
----
-
-## ❓ السؤال 14: الرصد وقياس الأداء (Observability) ونمط الـ Options Pattern
-> **"لماذا فصلنا Logging عن Performance؟ وما هو OpenTelemetry؟ ولماذا اعتمدنا نمط Options Pattern مع PerformanceSettings؟"**
-
-### 1. تطبيق مبدأ المسؤولية الواحدة (Single Responsibility Principle - SRP):
-* **`LoggingPipelineBehavior`:** مسؤوليته الوحيدة توثيق **ماذا حدث ومن قام به** (تسجيل بدء الطلب، التحذير من أخطاء البزنس، وتسجيل انهيارات الـ Exceptions).
-* **`PerformancePipelineBehavior`:** مسؤوليته الوحيدة **قياس السرعة والمقاييس الرقمية** (تشغيل ساعة الإيقاف، تسجيل عدادات ومقاييس OpenTelemetry، ومراقبة عتبة السرعة SLA).
-* **المكسب المعماري:** إمكانية اختبار أو تعديل أو تعطيل قياس الأداء دون المساس بسجلات اللوجز النصية.
-
-### 2. ما هو OpenTelemetry ولماذا نحتاجه؟
-في بيئة المايكروسيرفس، عندما يضغط الكاشير على زر إصدار الفاتورة وتستغرق العملية 8 ثوانٍ، يستحيل فتح 4 سيرفرات والبحث بين ملايين الأسطر.
-**OpenTelemetry** يحل هذا بثلاثة أعمدة:
-1. **Traces (التتبع الموزع):** رقم تتبع موحد (`TraceId`) يوضح على رسم بياني أين ضاع الوقت بدقة (Sales 20ms، Inventory 10ms، قاعدة البيانات 7.8s).
-2. **Metrics (المقاييس الرقمية الحية):** مثل عدادات السيارة (`pos_requests_total` و `pos_request_duration_ms`) لتغذية Prometheus و Grafana بلوحات تحكم حية.
-3. **Logs (السجلات المترابطة):** رسائل نصية مربوطة بالـ TraceId.
-
-### 3. لماذا نمط الخيارات (Options Pattern) مع `PerformanceSettings`؟
-بدلاً من تثبيت عتبة البطء كـ `const int SlowRequestThresholdMs = 500`:
-1. **المرونة التشغيلية:** خدمة المبيعات POS تحتاج عتبة سريعة `300ms`، بينما خدمة التقارير تحتاج `2000ms`.
-2. **بدون إعادة بناء (Zero-Rebuild):** يمكن تغيير القيمة في ملف `appsettings.json` في بيئة التشغيل دون تعديل سطر كود واحد.
-3. **البرمجة الدفاعية (Defensive Fallback):**
-   ```csharp
-   _slowRequestThresholdMs = options?.Value.SlowRequestThresholdMs is > 0 
-       ? options.Value.SlowRequestThresholdMs 
-       : 500;
-   ```
-   هذا السطر يضمن أنه حتى لو نسي المطور كتابة القسم في `appsettings.json` أو في الـ Unit Tests، فلن ينهار النظام أبداً وسيستخدم القيمة الافتراضية 500ms بأمان.
-
----
-
-## ❓ السؤال 15: تشريح المفاهيم: ما هو الـ Middleware؟ وما هو معيار ProblemDetails (RFC 7807)؟
-> **"ما هو تعريف الـ Middleware ولماذا سُمي بذلك؟ وما هو ProblemDetails ولماذا سُمي بهذا الاسم؟ وما المشكلة التي يحلانها والبدائل والمقايضات؟"**
-
-### 1. ما هو الـ Middleware؟ ولماذا سُمي بهذا الاسم؟
-* **التعريف الهندسي:** الـ **Middleware (البرمجيات الوسيطة)** هي مكونات برمجية تُركب في مسار الطلب (Request Pipeline) لتجلس **في المنتصف (in the middle)** بين خادم الويب (Web Server مثل Kestrel/Nginx) وبين كود التطبيق الفعلي (Controllers / Minimal APIs).
-* **نمط التصميم (Design Pattern):** يطبق نمط **سلسلة المسؤولية (Chain of Responsibility) وحلقات البصلة (Russian Dolls)**. كل Middleware يمكنه:
-  1. فحص أو تعديل الطلب قبل تمريره للمكون التالي: `await _next(context)`.
-  2. اتخاذ قرار الإيقاف الفوري (Short-Circuiting) وإرجاع الرد مباشرة دون إكمال المسار (مثل فحص الصلاحيات Authentication أو اعتراض الأخطاء).
-  3. فحص أو تعديل الرد العائد بعد اكتمال التنفيذ.
-* **لماذا سُمي بذلك؟** لأنه يمثل "طبقة وسطى" تفصل اهتمامات البنية التحتية والشبكة (Routing, Logging, Authentication, Error Handling) عن منطق البزنس الخالص.
-
----
-
-### 2. ما هو معيار `ProblemDetails`؟ ولماذا سُمي بذلك؟
-* **التعريف الهندسي:** هو **معيار دولي للإنترنت (IETF Standard)** موثق رسميًا برقم **RFC 7807** (ثم حُدث في RFC 9457) بعنوان: *"Problem Details for HTTP APIs"*.
-* **لماذا سُمي بهذا الاسم؟** لأنه بدلاً من الاكتفاء برقم حالة الـ HTTP المجرد (مثل `400 Bad Request` الذي لا يخبر العميل بأي شيء مفيد)، يقدم هذا المعيار **"تفاصيل المشكلة (Details of the Problem)"** في هيكل بيانات JSON قياسي وموحد يفهمه أي عميل أو مكتبة برمجية في العالم.
-* **الهيكل القياسي المعتمد في RFC 7807:**
-  ```json
-  {
-    "type": "https://errors.supermarket.com/errors/insufficient-funds",
-    "title": "Insufficient Funds",
-    "status": 400,
-    "detail": "The shift register has only $15.00, but the cash refund requires $50.00.",
-    "instance": "/api/v1/shifts/42/refunds",
-    "traceId": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-    "invalid-params": [
-      { "name": "amount", "reason": "Amount exceeds current cash drawer balance" }
-    ]
-  }
-  ```
-
----
-
-### 3. ما هي المشكلة الحقيقية التي يحلها ProblemDetails؟
-1. **كارثة عشوائية ردود الأخطاء (API Payload Chaos):**
-   بدون معيار، كل مطور أو فريق يخترع هيكلاً مختلفاً:
-   - خدمة الهوية تعيد: `{ "err": "User not found" }`
-   - خدمة المبيعات تعيد: `{ "success": false, "message": "Out of stock" }`
-   - خدمة المخازن تعيد نصاً خاماً: `"Product is inactive"`
-   - خادم الويب عند انهيار قاعدة البيانات يعيد صفحة HTML صفراء!
-   - **النتيجة:** فريق الـ Frontend (سواء كاشير، جوال، أو ويب) يحتاج لكتابة كتل `try-catch` وتحليلات معقدة ومتناقضة لكل خدمة!
-2. **غياب قابلية التتبع (Traceability):**
-   صعوبة ربط الخطأ الذي يظهر للمستخدم في شاشة الكاشير بالسجلات الداخلية (Logs) في السيرفر دون حقل `traceId` قياسي.
-
----
-
-### 4. ما هي البدائل المتاحة؟ (Alternatives Considered)
-
-| البديل | المزايا | العيوب والتكلفة | التقييم الهندسي |
+| الحل | الفكرة الأساسية | نقاط القوة | نقاط الضعف القاتلة |
 | :--- | :--- | :--- | :--- |
-| **1. الاكتفاء بـ HTTP Status Codes فقط** (مثل 400, 404, 500) | خفيف جداً بدون أي Payload إضافي. | غير كافٍ إطلاقاً في أنظمة الـ Enterprise؛ 400 تعني "طلب غير صالح"، لكن ما الحقل الخاطئ؟ وما هو سبب الخطأ؟ | مرفوض للأنظمة الحقيقية. |
-| **2. هيكل مخصص يحدده الفريق** (مثل `{ status, message, data }`) | حرية كاملة في إضافة ما نريد. | غير قياسي؛ كل مكتبة خارجية أو أداة مراقبة لا تفهمه، وعند تبديل المطورين يبدأ الجدال حول التسميات. | حل محلي محدود لا يناسب المايكروسيرفس. |
-| **3. معيار RFC 7807 ProblemDetails** | **معيار دولي معتمد عالمياً**، مدعوم تلقائياً في .NET 8/9/10، ومكتبات Angular/React/Axios تفهمه تلقائياً. | يضيف بضعة بايتات لحجم الـ JSON مقارنة بالردود البسيطة. | **الحل المعتمد والموصى به من Microsoft و IETF.** |
+| **الحل 1: Generic Repository تقليدي** | واجهة واحدة `IRepository<T>` لكل الكيانات مع دوال CRUD عامة. | • عدد ملفات قليل.<br>• مفهوم مألوف للمبتدئين. | • يكسر حدود الـ Aggregates.<br>• يعجز عن Eager Loading بدون حيل معقدة.<br>• إما يسبب Over-fetching أو يضطر لكشف IQueryable. |
+| **الحل 2: كشف IQueryable عبر UnitOfWork للكل** | واجهة `IIdentityUnitOfWork` تكشف كل الجداول كـ `IQueryable`. | • مرونة LINQ كاملة في الـ Handlers.<br>• ملف واجهة واحد فقط.<br>• ممتاز للاستعلامات السريعة. | • غياب حماية الـ Aggregates في مسار الكتابة.<br>• صعوبة بالغة في الـ Mocking للـ Unit Tests.<br>• تكرار الاستعلامات عبر الـ Handlers. |
+| **الحل 3: Specific Repositories كلاسيكية للكل** | واجهة لكل Aggregate فيها دوال لكل أمر ولكل استعلام شاشة. | • عزل صارم لقواعد العمل.<br>• Mocking سهل ومباشر. | • انفجار هائل في عدد الملفات والدوال.<br>• بطء شديد في القراءة (Over-fetching) لأنها ترجع Aggregates كاملة للشاشات البسيطة. |
+| **الحل 4: النمط الهجين المتوافق مع CQRS [الحل المختار]** | **Specific Repositories** للكتابة (Commands) + **IQueryable** للقراءة (Queries). | • يجمع أفضل ما في الطرفين ويقضي على نقاط ضعفهما.<br>• يحمي الـ Domain كاملاً.<br>• يمنح أقصى سرعة قراءة بـ SQL Projections. | • وجود واجهتين مختلفتين للوصول إلى البيانات. |
 
 ---
 
-### 5. المقايضات والتكلفة (Trade-offs & Cost Analysis)
-* **المكاسب (+):**
-  - **لغة تفاهم موحدة عالمياً:** الواجهات الأمامية تعتمد على معالج واحد فقط للأخطاء في كافة الخدمات (`error.response.data.title`, `detail`, `invalid-params`).
-  - **أمان فائق:** إخفاء أسرار النظام والـ StackTrace عن العملاء مع الاحتفاظ بها في السجلات عبر الـ `TraceId`.
-* **التكلفة المقبولة (-):**
-  - حجم استجابة الـ JSON أكبر قليلاً (بضع عشرات من البايتات الإضافية لحقول `type`, `title`, `instance`).
-  - يتطلب الالتزام بالمعيار تدريب الفريق على كتابة أكواد أخطاء دلالية منظمة.
+## 3. لماذا اخترنا الحل الهجين؟ (The Architectural Rationale)
 
----
+تم اختيار **النمط الهجين (Hybrid Persistence Model)** لأن عمليات الكتابة وعمليات القراءة تخضعان **لقوى ومتطلبات هندسية متناقضة بالكامل (Asymmetric Forces)**:
 
-## ❓ السؤال 16: لغز تجديد التوكن في Keycloak: كيف يعمل "بدون تدخل المستخدم"؟
-> **"هل خادم Keycloak هو الذي يجدد التوكن تلقائياً بدون تدخل المستخدم؟ كيف يعمل الـ Silent Refresh مع المايكروسيرفسز؟ وما دور الباك إند؟"**
-
-### 1. تصحيح المفهوم:
-* **المستخدم البشري (الكاشير)** لا يتدخل (لا يعيد كتابة الرمز السري)، نعم.
-* ولكن **خادم Keycloak لا يجدد التوكن بمفرده في الفراغ!** لأنه خادم ويب Stateless لا يملك اتصالاً مفتوحاً بكل جهاز ليدفع له التوكنات دون طلب.
-* **المسؤول الحقيقي عن التجديد هو تطبيق العميل (Client / Frontend):**
-  - إما **استباقياً (Proactive Timer):** قبل انتهاء الـ Access Token بدقيقة (عند الثانية 240 من أصل 300 ثانية)، يذهب الفرونت إند في الخلفية إلى خادم Keycloak ويجدد التوكن في صمت تام، فلا يواجه الكاشير أي انقطاع.
-  - أو **تفاعلياً (Reactive Interceptor):** عند استقبال خطأ `401 Unauthorized` من الـ API متبوعاً بترويسة `Token Expired`، يعترض الـ Interceptor الرد، يجدد التوكن بـ `Refresh Token`، ثم يعيد إرسال الطلب الأصلي تلقائياً.
-
-### 2. دور خدمات الـ Backend المصغرة:
-* خدمات الـ APIs تفحص الـ Access Token **محلياً في الذاكرة (Stateless Verification via JWKS)** بدون استدعاء خادم Keycloak في كل فاتورة، لتوفير أعلى سرعة ممكنة.
-* عند انتهاء صلاحية التوكن، ترفع الخدمة استثناء `SecurityTokenExpiredException` وتعيد ترويسة `WWW-Authenticate: Bearer error="invalid_token"` صريحة لتمكين الفرونت إند من تمييز انتهاء التوكن عن سحب الصلاحيات.
-
-📖 **للاطلاع على الدليل المعماري الكامل ومخططات تسلسل الأحداث وحالات الفشل المتزامنة (Thundering Herd)، راجع الوثيقة المخصصة:**
-* 🔗 [docs/keycloak-silent-token-refresh-deep-dive.md](file:///e:/dotnet/POS/docs/keycloak-silent-token-refresh-deep-dive.md)
-
----
-
-## ❓ السؤال 17: استراتيجية الـ Pagination في أنظمة الـ Enterprise: لماذا لا نستخدم قالباً واحداً؟
-> **"ما هي أنواع الـ Pagination؟ ولماذا صممنا نمطين منفصلين (PagedList و CursorPagedList) في BuildingBlocks بدلاً من كلاس واحد هجين؟"**
-
-```mermaid
-flowchart TD
-    subgraph OffsetPaging [1. Offset-Based Pagination: القائم على التخطي]
-        Q1["SELECT * FROM Invoices ORDER BY Id OFFSET 1000000 LIMIT 20"]
-        Scan["قاعدة البيانات تفحص مليون صف وترميها في الزبالة لتأخذ آخر 20 صفاً!"]
-        PerfBad["الأداء ينهار كلما تقدمت في الصفحات O(N)"]
-    end
-
-    subgraph CursorPaging [2. Keyset / Cursor-Based Pagination: القائم على المؤشر]
-        Q2["SELECT * FROM Invoices WHERE Id > 10542 ORDER BY Id ASC LIMIT 20"]
-        Seek["القفز الفوري عبر الـ B-Tree Index مباشرة بدون قراءة الصفوف السابقة!"]
-        PerfGood["الأداء ثابت فائق السرعة سواء في الصفحة 1 أو الصفحة مليون O(1)"]
-    end
+```
+┌──────────────────────────────────────┐      ┌──────────────────────────────────────┐
+│        مسار الكتابة (Commands)        │      │        مسار القراءة (Queries)        │
+├──────────────────────────────────────┤      ├──────────────────────────────────────┤
+│ 1. الهدف: حماية اتساق البيانات.       │      │ 1. الهدف: السرعة والأداء.            │
+│ 2. يتطلب تحميل Aggregate كامل.       │      │ 2. يتطلب أعمدة محددة فقط (DTO).      │
+│ 3. الاستعلامات قليلة وثابتة (By Id).  │      │ 3. الاستعلامات متنوعة ومتغيرة باستمرار.│
+│ 4. يتطلب Change Tracking.            │      │ 4. يتطلب No-Tracking.                │
+│ 5. التجريد الصارم يحمي البيزنس.      │      │ 5. التجريد الصارم يخنق الأداء.        │
+└──────────────────────────────────────┘      └──────────────────────────────────────┘
 ```
 
-### 1. لماذا يستحيل دمج النوعين في كلاس واحد دون إفساد الأداء؟
-* في الترقيم القائم على المؤشر (**Keyset / Cursor**)، الهدف الأساسي هو **السرعة الثابتة O(1)**.
-* لحساب إجمالي الصفحات (`TotalPages`) في الترقيم الكلاسيكي، نحن مجبرون على تشغيل استعلام:
-  `SELECT COUNT(*) FROM Invoices;`
-* في جدول يحتوي على **10 ملايين فاتورة**، استعلام `COUNT(*)` يجبر محرك PostgreSQL على فحص الجدول بالكامل (Full Table Scan) ويستغرق ثوانٍ ثمينة تقتل أداء السيرفر!
-* **القرار الهندسي:** فصلهما تماماً حتى لا يُجبر مستخدم الـ Cursor على دفع ضريبة استعلام `COUNT(*)` البطيء.
+### كيف فكك هذا الحل جميع اعتراضات المطور؟
 
-### 2. متى نستخدم كل نمط؟
-| وجه المقارنة | `PagedList<T>` (Offset-Based) | `CursorPagedList<T, TCursor>` (Keyset / Cursor) |
-| :--- | :--- | :--- |
-| **طبيعة الاستخدام** | شاشات الإدارة والتقارير (Admin Portal). | شاشات الكاشير السريعة والعمليات اللحظية (POS Streams). |
-| **حجم البيانات** | محدود أو متوسط (< 100,000 سجل). | جداول ضخمة أو مليونية (ملايين الفواتير وحركات الصناديق). |
-| **المدخلات** | `PageNumber` و `PageSize`. | `Cursor` (مؤشر آخر عنصر) و `PageSize`. |
-| **المخرجات** | `Items`, `TotalCount`, `TotalPages`, `PageNumber`. | `Items`, `NextCursor`, `HasNextPage` (بدون TotalCount). |
-| **تجربة المستخدم** | أزرار الانتقال المباشر لأرقام الصفحات (1، 2، 3...). | التمرير اللانهائي (Infinite Scroll) أو أزرار (التالي / السابق). |
-| **تعقيد الأداء** | $O(N)$ — يتباطأ مع التقدم في الصفحات الأخيرة. | $O(1)$ — ثابت وفائق السرعة يعتمد على الفهرس مباشرة. |
+#### 1. حل مشكلة "عدد الملفات وتكرار الـ Repository":
+* لا ننشئ Repository لكل جدول في قاعدة البيانات (ليس لدينا 18 واجهة).
+* ننشئ Repository فقط لـ **Aggregate Roots** (في خدمتنا: `Branch`, `User`, `Role`).
+* في الـ Infrastructure، كتبنا كلاس مشترك عام (Base Class):
+  ```csharp
+  internal abstract class Repository<TAggregate>(IdentityDbContext db) where TAggregate : AggregateRoot
+  {
+      public void Add(TAggregate entity) => db.Set<TAggregate>().Add(entity);
+      public virtual Task<TAggregate?> GetByIdAsync(Guid id, CancellationToken ct) =>
+          db.Set<TAggregate>().FirstOrDefaultAsync(e => e.Id == id, ct);
+  }
+  ```
+  **النتيجة:** طبقنا فكرة الـ Generic لتقليل تكرار الكود البرمجي داخلياً، لكن حافظنا على واجهات مخصصة (Specific Contracts) خارجياً لحماية النظام!
 
-### 3. الحماية الدفاعية والتهيئة من ملفات الإعدادات (Defense-in-Depth & PaginationSettings):
-تم اعتماد استراتيجية دفاعية ثنائية الطبقات:
-1. **طبقة الثوابت الدفاعية (Fallback Constants):** `FallbackMaxPageSize = 100` و `FallbackDefaultPageSize = 10 / 20` لحماية الخادم من الانهيار حتى لو انعدمت ملفات التهيئة.
-2. **طبقة الـ Options Pattern (`PaginationSettings`):** كلاس إعدادات يتيح ضبط الحدود ديناميكياً عبر `appsettings.json` لفرق العمليات والـ DevOps دون إعادة بناء الكود.
+#### 2. حل مشكلة "الاختبارات (Mocking vs Testcontainers)":
+* **في الـ Commands:** الـ Handler يحتوي على خطوات منطقية (تحقق من الكود -> استدعاء Domain -> حفظ). هذا يُختبر بـ **Unit Test مع Mock** لـ `IBranchRepository` في أجزاء من الميلي ثانية.
+* **في الـ Queries:** القراءة لا تحتوي على منطق بيزنس، بل استعلام SQL. هنا لا فائدة من الـ Mock؛ الأمان الحقيقي هو اختبار الاستعلام الفعلي ضد PostgreSQL حقيقي باستخدام **Testcontainers**.
+* **النتيجة:** كل جزء يُختبر بالأداة المناسبة لطبيعته.
+
+#### 3. حل مشكلة "تكرار الاستعلامات المشابهة":
+* بدلاً من إضافة دوال في Repository، نستخدم **LINQ Extension Methods**:
+  ```csharp
+  public static IQueryable<Branch> WhereActiveInCity(this IQueryable<Branch> q, string city)
+      => q.Where(b => b.IsActive && b.Address.City == city);
+  ```
+* **النتيجة:** حققنا مبدأ **DRY** بالكامل مع الحفاظ على مرونة وقوة الـ LINQ.
 
 ---
 
-## ❓ السؤال 18: لماذا لا نحقن `IOptions<PaginationSettings>` داخل `PaginationParams` مباشرة؟ وما وظيفة كل ملف في حزمة الترقيم؟
-> **"لماذا لا نستقبل `MaxPageSize` في `PaginationParams` عبر حقن التبعيات (DI) مثلما فعلنا في `PerformancePipelineBehavior`؟ وما هو التشريح الوظيفي لكل ملف من ملفات الترقيم؟"**
+## 4. إجابات أسئلة التحقق كحالات دراسية واقعية (Real-World Applications)
 
-### 1. الفارق المعماري الجوهري: DTO (ناقل بيانات) مقابل Service (معالج منطقي):
-* **`PerformancePipelineBehavior`:** هو **خدمة وسيطة (Pipeline Service)** تُنشأ وتُدار بالكامل بواسطة حاوية الـ DI (`IServiceProvider`)؛ ولذلك يُعد حقن `IOptions` فيها تصميماً قياسياً وأصيلاً في ASP.NET Core.
-* **`PaginationParams`:** هو **كائن نقل بيانات / باراميتر استعلام (DTO / Query Parameter Object)**:
-  - يُنشأ تلقائياً بواسطة **Model Binder** الخاص بـ ASP.NET Core عند قراءة روابط الـ HTTP Query String (مثل: `GET /api/products?pageNumber=2&pageSize=20`).
-  - محرك الـ Model Binding يستدعي الـ Parameterless Constructor ولا يملك حقن خدمات الـ DI داخل كائنات الـ Query Parameters إلا عبر كتابة Custom Model Binders معقدة وهشة تكسر المعايير.
-  - حقن خدمات داخل الـ DTOs يكسر مبدأ **Separation of Concerns** ويجعل كتابة الـ Unit Tests واختبارات الـ MediatR Handlers مليئة بإنشاء كائنات وهمية (Mocking) لا داعي لها.
+خلال النقاش، طُرحت 3 أسئلة معمارية حاسمة لاختبار رسوخ الفهم:
 
-### 2. الحل المعماري الأفضل:
-* جعل `PaginationParams` و `CursorParams` كائنات بيانات نقية (Pure POCO Records) مع حماية ذاتية (Self-Guarding Fallbacks).
-* توفير كلاس `PaginationSettings` يمكن حقنه في طبقة التحقق (`FluentValidation`) للتحقق من الحدود ديناميكياً من `appsettings.json` قبل وصول الطلب للـ Handler أو قاعدة البيانات.
+---
 
-### 3. التشريح الوظيفي لملفات حزمة الترقيم (Component Anatomy):
+### الحالة الأولى: `DeactivateBranchHandler`
+> **السؤال:** Handler يحتاج يتحقق أن الفرع لا يحتوي على موظفين نشطين قبل تعطيله، هل يستخدم `IBranchRepository` أم `IIdentityReadDbContext`؟
+* **إجابة المطور:** *"سوف نستعمل IBranchRepository لأنه فيه تحقق ويجب أن نحمي الـ Rule."*
+* **التقييم والعمق الهندسي:**
+  - **الإجابة صحيحة 100%.**
+  - **السبب المعماري الكامل:** عملية التعطيل هي **Command** (تغيير حالة). الـ Handler يسترجع الـ Aggregate كاملاً عبر `IBranchRepository.GetByIdAsync(id)` (الذي يضمن تحميل كل ما يلزم)، ثم يستدعي دالة البيزنس في الكيان `branch.Deactivate()`. الكيان نفسه هو الذي يفحص شروطه ويرمي خطأ إذا وُجد موظفون، ثم يُحفظ التعديل عبر `_unitOfWork.SaveChangesAsync()`.
+  - لو استخدمنا `ReadDbContext` (المخصص للقراءة بـ NoTracking)، فلن نستطيع تعديل الكيان ولا حفظه في الـ Change Tracker!
 
-| الملف | نوعه المعماري | وظيفته ومسؤوليته الوحيدة (Single Responsibility) |
-| :--- | :--- | :--- |
-| **`PaginationSettings.cs`** | **Options Class** | يمثل نموذج قراءة إعدادات الترقيم من قسم `"Pagination"` في `appsettings.json`، مما يسمح لمهندسي العمليات بتعديل الحجم الافتراضي والأقصى للصفحات أثناء التشغيل. |
-| **`PaginationParams.cs`** | **Request DTO (Offset)** | يستقبل معايير الترقيم الكلاسيكي (`PageNumber`, `PageSize`) من استعلامات الـ API أو MediatR، ويضمن عدم إدخال أرقام سالبة أو أحجام صفحات غير آمنة دفاعياً. |
-| **`PagedList.cs`** | **Response DTO + Factory** | يغلف نتائج الاستعلام مع الميتاداتا الإدارية (`TotalCount`, `TotalPages`, `HasPreviousPage`, `HasNextPage`). يحتوي على مصنع ذكي `CreateAsync` ينفذ `CountAsync` ثم `Skip/Take` عبر EF Core. |
-| **`CursorParams.cs`** | **Request DTO (Keyset)** | يستقبل مؤشر الترقيم (`Cursor`) وحجم الصفحة للعمليات اللحظية؛ صُمم كـ Generic Type (`TCursor`) ليدعم أي نوع مؤشر (مثل `Guid`, `long`, `DateTime`). |
-| **`CursorPagedList.cs`** | **Response DTO (Keyset)** | يغلف نتائج الترقيم عالي السرعة مع مؤشر العنصر التالي (`NextCursor`) وزر التحقق (`HasNextPage`)، ويمنع تماماً تنفيذ استعلامات `COUNT(*)` المنهكة. |
+---
+
+### الحالة الثانية: شاشة "عرض عدد الموظفين في كل فرع"
+> **السؤال:** لو جاء طلب شاشة تعرض عدد الموظفين في كل فرع، لماذا لا نضيف دالة `GetBranchesWithStaffCount()` في `IBranchRepository`؟
+* **إجابة المطور:** *"الموضوع قراءة فقط لا يوجد شيء حساس، فلو استعملنا Repository سنضطر لكتابة دالة لكل شاشة، ومن ناحية الأداء نستعمل IQueryable لتتم المعالجة في Database وتأتي جاهزة بـ AsNoTracking."*
+* **التقييم والعمق الهندسي:**
+  - **إجابة ممتازة وناضجة هندسياً.**
+  - **السبب المعماري الكامل:** لو وضعناها في الـ Repository، إما أن نحمّل كائنات `Branch` وجميع موظفيهم في الذاكرة للعد (كارثة أداء وذاكرة: **Over-fetching**)، أو نضيف دالة متخصصة ترجع DTO داخل واجهة الـ Aggregate مما يشوه مسؤوليتها.
+  - عبر `IIdentityReadDbContext`، يكتب الـ Query Handler استعلام Projection مباشر:
+    ```csharp
+    var result = await readDb.Branches
+        .Select(b => new BranchStaffCountDto(b.Id, b.Name, b.Staff.Count()))
+        .ToListAsync(ct);
+    ```
+    فتترجمها قاعدة البيانات إلى استعلام `SELECT b.Id, b.Name, COUNT(s.Id) ... GROUP BY` فائق السرعة وبأقل حجم نقل شبكي ممكن.
+
+---
+
+### الحالة الثالثة: لماذا `IUnitOfWork` واجهة منفصلة وليست دالة داخل الـ Repository؟
+> **السؤال:** لماذا لا نضع `SaveChanges` داخل `IBranchRepository` وتكون دالة واحدة؟
+* **إجابة المطور:** *"لأنه ليس كل العمليات تتطلب Transaction."*
+* **التقييم والتصحيح الهندسي الدقيق (Crucial Architectural Distinction):**
+  - السبب ليس غياب الـ Transaction، بل **معاملات التعديل متعددة الكيانات (Multi-Aggregate Atomic Consistency)**!
+  - **سيناريو الفشل الكارثي:** لنفترض أن لدينا Use Case ينقل موظفاً من فرع ويعدل إحصائيات فرع آخر في نفس الطلب.
+    - لو كانت دالة `SaveChanges` داخل الـ Repository:
+      ```csharp
+      _branchRepository.SaveChanges(); // حفظ الفرع الأول بنجاح!
+      // انقطع الاتصال بقاعدة البيانات أو حدث خطأ أثناء حفظ المستخدم:
+      _userRepository.SaveChanges();   // ❌ فشل!
+      ```
+    - **النتيجة:** قاعدة البيانات أصبحت في حالة متناقضة ومشوهة (Inconsistent / Corrupted State) لأن جزءاً حُفظ والآخر فشل!
+  - **الحل:** فصل `IUnitOfWork` يضمن أن كل الـ Repositories تشترك في نفس جلسة العمل (Scoped Context)، ولا يتم استدعاء الحفظ إلا مرة واحدة في نهاية الـ Handler عبر `_unitOfWork.SaveChangesAsync()` لتتم العملية كلها أو تفشل كلها ذرّياً (**Atomicity**).
+
+---
+
+## 5. ميزان المقايضات: ماذا كسبنا وماذا خسرنا؟ (Trade-offs Balance Sheet)
+
+في الهندسة البرمجية لا توجد حلول سحرية كاملة؛ كل قرار هو عبارة عن مقايضة مدروسة:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   الميزان المعماري                                    │
+├───────────────────────────────────────────┬────────────────────────────────────────────┤
+│           ما كسبناه (Gains)               │          ما دفعناه كثمن (Sacrifices)       │
+├───────────────────────────────────────────┼────────────────────────────────────────────┤
+│ ✅ حماية مطلقة لقواعد الـ Domain           │ ⚠️ وجود واجهتين للبيانات في الـ Application │
+│    مستحيل تعديل أي كيان فرعي بالخطأ       │    (يحتاج المطور لفهم CQRS للتفريق بينهما) │
+├───────────────────────────────────────────┼────────────────────────────────────────────┤
+│ ✅ أقصى أداء ممكن في القراءة (Zero Waste) │ ⚠️ تسريب حزمة EF Core Abstractions للقراءة │
+│    استعلامات SQL Projections مباشرة إلى DTO│    طبقة الـ Application تعتمد على LINQ     │
+├───────────────────────────────────────────┼────────────────────────────────────────────┤
+│ ✅ سرعة اختبارات الوحدة (Fast Unit Tests)  │ ⚠️ استعلامات القراءة تحتاج Integration Test│
+│    الـ Command Handlers تُختبر بـ Mock سهل │    لا يمكن الاكتفاء بالـ Unit Test لاختبارها│
+├───────────────────────────────────────────┼────────────────────────────────────────────┤
+│ ✅ التخلص من تضخم دوال الـ Repositories   │ ⚠️ كتابة Base Class إضافية في الـ Infra   │
+│    لا حاجة لملفات جديدة مع كل شاشة عرض     │    تتطلب فهماً جيداً لـ Generics في C#     │
+└───────────────────────────────────────────┴────────────────────────────────────────────┘
+```
+
+---
+
+## 6. نماذج ذهنية للمهندس المتقدم (Senior Mental Models)
+
+### الانتقال من Node.js إلى .NET Clean Architecture:
+1. **في Node.js:** غالباً ما تكون الكيانات (Schemas) مجرد أكياس بيانات غبية (Anemic Data Bags)، والمنطق مكدس في Services ضخمة.  
+   **في .NET DDD:** الكيان هو الحارس (Rich Domain Model). لا أحد يغير خاصية إلا عبر Method داخل الكيان.
+2. **قاعدة Martin Fowler الذهبية:**  
+   > *"لا تخفِ لغة استعلام قوية وغنية مثل LINQ/SQL خلف واجهة عقيمة ومحدودة مثل `GetByX` و `GetByY`."*
+3. **قاعدة Eric Evans في DDD:**  
+   > *"الـ Repositories مخصصة فقط للـ Aggregate Roots لحماية حدود المعاملات، وليست مرآة لكل جدول في قاعدة البيانات."*
+4. **حكمة الـ Senior Engineer:**  
+   > *"التجريد ليس هدفاً بحد ذاته. التجريد الذي يخفي ما نحتاجه هو عبء، والتجريد الذي يفشل في حماية ما يجب حمايته هو إهمال."*
