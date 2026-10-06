@@ -347,6 +347,20 @@
   * **إيجابي:** استجابة لحظية لشاشات نقاط البيع عند تسجيل الدخول السريع.
   * **إيجابي:** التزام بقاعدة DDD الذهبية: "تصميم تجمعات صغيرة ومحددة المسؤولية (Small, Focused Aggregates)".
 
+---
+
+## 🏛️ ADR-ID-019: استراتيجية تحويل البيانات (Explicit DTO Mapping) ومعمارية تعدد اللغات (Localization Strategy)
+
+* **الحالة (Status):** مُعتمد ومطبق (Approved & Implemented).
+* **الملف الكامل:** راجع التوثيق المعماري الشامل في [ADR-002-Explicit-DTO-Mapping-and-Multilingual-Localization.md](ADR/ADR-002-Explicit-DTO-Mapping-and-Multilingual-Localization.md).
+* **السياق (Context):**
+  * عند تصميم الـ Use Cases وقوائم الـ DTOs، تجنبنا استخدام مكتبة `AutoMapper` لحماية التغليف في الـ Commands ومنع أخطاء الـ Runtime وأعباء الـ Reflection، مع توجيه استعلامات القراءة عبر Direct LINQ Projections لمنع الـ Over-fetching.
+  * كما تم تصميم معمارية دعم اللغة العربية والإنجليزية لتكون ثلاثية المستويات (3-Tier Localization): نواة دومين محايدة لغوياً (Language-Agnostic) تطلق Error Codes ثابتة، طبقة API تعالج الترجمة بناءً على `Accept-Language`، وبيانات تجارية مزدوجة في قاعدة البيانات.
+* **النتائج والآثار (Consequences):**
+  * **إيجابي:** أداء فائق بمبدأ Zero-Allocation بدون Reflection.
+  * **إيجابي:** أمان تام في مرحلة الـ Compile-Time ضد أخطاء تعديل الحقول.
+  * **إيجابي:** عزل نظيف للغات يتيح دعم أي لغة مستقبلية دون المساس بنواة الدومين.
+
 
 
 

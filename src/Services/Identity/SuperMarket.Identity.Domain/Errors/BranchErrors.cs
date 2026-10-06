@@ -50,4 +50,10 @@ public static class BranchErrors
 
     public static readonly Error DuplicateDayOfWeek =
         Error.Conflict("Branch.DuplicateDayOfWeek", "Operating hours cannot contain duplicate entries for the same day of the week.");
+
+    public static readonly Error CodeAlreadyExists =
+        Error.Conflict("Branch.CodeAlreadyExists", "A branch with the specified code already exists.");
+
+    public static readonly Error NotFound =
+        Error.NotFound("Branch.NotFound", "The requested branch was not found.");
 }
