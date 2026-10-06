@@ -2,7 +2,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SuperMarket.BuildingBlocks.Infrastructure;
+using SuperMarket.Identity.Application.Abstractions.Persistence;
 using SuperMarket.Identity.Infrastructure.Data;
+using SuperMarket.Identity.Infrastructure.Persistence.Repositories;
 
 namespace SuperMarket.Identity.Infrastructure;
 
@@ -19,7 +21,7 @@ public static class DependencyInjection
         services.AddScoped<AuditSaveChangesInterceptor>();
         services.AddScoped<DispatchDomainEventsInterceptor>();
 
-        // Register Identity DbContext
+        // Register Identity DbContext (Primary data access boundary)
         services.AddDbContext<IdentityDbContext>((sp, options) =>
         {
             options.UseNpgsql(connectionString, npgsqlOptions =>
@@ -35,10 +37,18 @@ public static class DependencyInjection
             options.AddInterceptors(
                 sp.GetRequiredService<AuditSaveChangesInterceptor>(),
                 sp.GetRequiredService<DispatchDomainEventsInterceptor>());
-
-            // Default performance optimization: Read queries are NoTracking unless AsTracking() is explicitly called
-            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
         });
+
+        // Register CQRS Persistence Ports (Scoped to share the exact same DbContext instance per request)
+        services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<IdentityDbContext>());
+        services.AddScoped<IIdentityReadDbContext>(sp => sp.GetRequiredService<IdentityDbContext>());
+
+        // Register Write Repositories
+        services.AddScoped<IBranchRepository, BranchRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IPOSRegisterRepository, POSRegisterRepository>();
+        services.AddScoped<IRoleRepository, RoleRepository>();
+        services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
 
         return services;
     }
