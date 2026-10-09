@@ -3,140 +3,206 @@
 | Metadata | Details |
 | :--- | :--- |
 | **Status** | ✅ Accepted |
-| **Date** | 2026-10-05 |
+| **Date** | 2026-10-05 (Updated: 2026-10-08) |
 | **Author** | Senior Backend Engineer / Architecture Reviewer & Technical Partner |
 | **Service** | SuperMarket.Identity |
 | **Layer** | Application & Infrastructure (Persistence Ports & Adapters) |
-| **Decision Scope** | Data Access Architecture, CQRS, Testability, Domain Encapsulation |
+| **Decision Scope** | Data Access Architecture, CQRS, Testability, Domain Encapsulation, Performance |
 
 ---
 
-## 1. السياق والمشكلة (Context & Problem Statement)
+## 1. السياق والمشكلة بالضبط (Context & Exact Problem)
 
-عند بناء طبقة التطبيق (`Identity.Application`) بالاعتماد على **Clean Architecture** و **Domain-Driven Design (DDD)** باستخدام **Entity Framework Core (EF Core 9)**، واجهنا السؤال المعماري الأكثر جدلاً في مجتمع .NET:
+عند بناء خدمة مثل `SuperMarket.Identity` بالاعتماد على **Clean Architecture** و **Domain-Driven Design (DDD)** باستخدام **Entity Framework Core (EF Core 9)**، واجهنا السؤال المعماري الأكثر جدلاً في مشاريع الـ Enterprise:
 
-> **كيف يجب أن تصل طبقة الـ Application إلى قاعدة البيانات دون كسر مبادئ التصميم ودون إدخال تعقيد لا طائل منه؟**
+> **كيف تصمم طبقة الوصول للبيانات (Data Access) بحيث تحمي قواعد العمل (Domain Rules) عند التعديل، وفي نفس الوقت توفر استعلامات سريعة ومرنة جداً عند القراءة دون الوقوع في فخ الكود المكرر والتعقيد الزائد؟**
 
-### التحديات المتعارضة (Competing Forces):
-1. **حماية قواعد العمل (Domain Invariants):** في DDD، يجب ألا يُعدل أي كيان فرعي (مثل `BranchOperatingHours`) إلا من خلال الـ Aggregate Root (`Branch`). السماح بالوصول المباشر للكيانات الفرعية يفسد البيانات.
-2. **مرونة وسرعة الاستعلام (Query Flexibility & Performance):** كل واجهة مستخدم (UI) أو تقرير يتطلب شكلاً مختلفاً من البيانات (DTO Projections). إجبار القراءة على المرور عبر دوال Repository ثابتة يؤدي إلى **Over-fetching** (تحميل بيانات زائدة) أو **Repository Method Explosion** (انفجار عدد الدوال).
-3. **عزل التبعيات (Dependency Inversion - DIP):** يجب ألا تعتمد طبقة الـ Application على تفاصيل الـ Infrastructure أو مزود قاعدة بيانات محدد (PostgreSQL/Npgsql).
-4. **قابلية الاختبار (Testability):** الحاجة لاختبار منطق تنسيق الـ Handlers بسرعة عبر Unit Tests (Mocking) دون إهمال اختبار صحة استعلامات SQL الحقيقية.
-5. **مقاومة التكرار (DRY) والتعقيد الزائد (YAGNI):** عدم كتابة عشرات الملفات والواجهات التي لا تفعل سوى تمرير الاستدعاءات (`Pass-through code`)، مع تجنب فخ التجريد المسرّب (`Leaky Abstraction`).
+المشكلة الحقيقية تكمن في أن متطلبات **الكتابة (Commands / Writes)** تختلف 180 درجة عن متطلبات **القراءة (Queries / Reads)**:
+* **في الكتابة:** نحتاج تحميل الكيان كاملاً بكل علاقاته وحساباته إلى الذاكرة، لحماية شروط العمل والتأكد من صحة التعديل قبل الحفظ.
+* **في القراءة:** نحتاج فقط بضعة حقول لعرضها على شاشة المستخدم أو في جدول، بأسرع وقت وأقل استهلاك لذاكرة السيرفر.
+
+محاولة إجبار الاثنين على استخدام نفس النمط البرمجي (Single Pattern for Both) تخلق مشاكل أداء قاتلة أو تدمر تصميم الدومين بالكامل.
 
 ---
 
-## 2. البدائل التي تم تقييمها (Options Considered)
+## 2. التحديات (Competing Challenges)
+
+واجهنا 5 قوى معمارية متعارضة تتطلب موازنة دقيقة:
+
+1. **حماية قواعد العمل والـ Invariants:**  
+   في فلسفة DDD، الكيانات التابعة (مثل ساعات العمل `OperatingHours` الخاصة بالفرع) لا يجوز التعديل عليها منفردة، بل حصراً من خلال الـ Aggregate Root (`Branch`). أي تصميم يسمح بالوصول المباشر للجداول الفرعية يهدد بتخريب البيانات.
+2. **منع الـ Over-fetching وهدر الذاكرة:**  
+   شاشات العرض والـ Dropdowns تحتاج حقلين فقط (مثل `Id` و `Name`). جلب الكائن كاملاً بكل بياناته وعلاقاته يسبب ضغطاً هائلاً على الشبكة وقاعدة البيانات والذاكرة (RAM).
+3. **تجنب انفجار دوال الـ Repositories (Repository Method Explosion):**  
+   لو اعتمدنا على دوال جاهزة في Repository للقراءة، سنضطر مع كل شاشة جديدة في الواجهة لإضافة دالة جديدة في الـ Interface (مثل `GetBranchForDropdown`, `GetBranchForHeader`, `GetBranchDetails`...).
+4. **تتبع التغييرات (Change Tracking Overhead):**  
+   محرك EF Core يقوم افتراضياً بمراقبة كل كائن يتم جلبه (Tracking)، وهو أمر ضروري عند الحفظ والتعديل، لكنه يمثل هدراً بنسبة 40-60% من موارد المعالج والذاكرة في استعلامات القراءة فقط.
+5. **سهولة وسرعة اختبار الكود (Testability):**  
+   نريد كتابة Unit Tests سريعة لـ Command Handlers باستخدام Mocking دون الحاجة لقاعدة بيانات حقيقية، بينما استعلامات القراءة تتطلب فحص كفاءة الـ SQL الفعلي.
+
+---
+
+## 3. كيف ستحصل المشكلة بالضبط؟ (Workflow & Failure Scenarios)
+
+لتوضيح خطورة القرارات الخاطئة، هذه سيناريوهات تفصيلية لما يحدث عملياً في بيئات الإنتاج:
+
+### سيناريو الفشل الأول: لو استخدمنا Generic Repository للقراءة والكتابة
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ الخطوة 1: شاشة في الـ Frontend تحتاج قائمة بأسماء الفروع لقائمة منسدلة  │
+│ يستدعي المطور دالة: _branchRepo.GetAllAsync()                         │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ الخطوة 2: استعلام قاعدة البيانات                                      │
+│ يتم تنفيذ: SELECT * FROM Branches مع جلب 15 عموداً كاملاً لكل سجل      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ الخطوة 3: استهلاك موارد السيرفر                                        │
+│ EF Core يُنشئ 10,000 كائن في الذاكرة ويفعل Change Tracker لكل كائن     │
+│ الذاكرة تقفز إلى مئات الميجابايت، بينما الشاشة تحتاج فقط ID والاسم!    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### سيناريو الفشل الثاني: لو فتحنا `IQueryable` أو الـ `DbContext` المباشر للكتابة
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ الخطوة 1: مطور جديد يريد تعديل ساعة إغلاق فرع                           │
+│ بدلاً من استدعاء Branch.UpdateOperatingHours(...)، يقوم بكتابة استعلام:│
+│ var hour = await _context.OperatingHours.FirstAsync(h => h.Id == id);  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ الخطوة 2: تعديل مباشر للكيان التابع وتجاوز الـ Domain Rules            │
+│ يقوم المطور بتعيين: hour.CloseTime = 08:00 (قبل وقت الفتح 09:00)       │
+│ ثم يستدعي مباشرة: await _context.SaveChangesAsync();                    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ الخطوة 3: فساد حالة البيانات في الـ Database                           │
+│ البيانات حُفظت بقيم متناقضة لأن الكيان التابع عُدل دون المرور بـ Root   │
+│ لم يتم تفعيل فحص قواعد العمل (Invariants) نهائياً!                     │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. الحلول والبدائل مع المقايضات (Trade-offs Analysis)
+
+درسنا 4 خيارات رئيسية، وهذه المقايضة الهندسية الدقيقة لكل منها (ماذا نكسب وماذا نخسر):
 
 ### الخيار 1: Generic Repository Pattern لجميع العمليات (`IRepository<T>`)
-* **الوصف:** واجهة معيارية واحدة لكل الكيانات تحتوي على `GetByIdAsync`, `GetAllAsync`, `Add`, `Update`, `Remove`.
-* **لماذا رُفض؟**
-  - يعامل جميع الكيانات بنفس الطريقة، مما يكسر مفهوم Aggregate Boundary (يسمح بإنشاء `IRepository<OperatingHours>`).
-  - يعجز عن دعم Eager Loading (`Include`) و Projections بدون إضافة معامِلات LINQ Expressions معقدة تُعيدنا إلى تسريب تفاصيل ORM.
-  - يُعتبر Anti-pattern فوق EF Core لأنه يكرر وظيفة `DbSet<T>` القائمة أصلاً.
+* **الوصف:** واجهة موحدة تحتوي دوال عامة: `GetById`, `GetAll`, `Add`, `Update`, `Delete`.
+* **ما نكسبه:** واجهة مألوفة، تقليل كود الواجهات المكتوبة باليد في البداية.
+* **ما نخسره (لماذا رُفض؟):**
+  - **نخسر سلامة البيانات:** يسمح بإنشاء `IRepository<OperatingHours>` وتعديل السجلات الفرعية بدون الـ Aggregate Root.
+  - **نخسر أداء القراءة:** لا يدعم الـ Projections المخصصة بدون تمرير تعابير LINQ معقدة ترجعنا لنفس المشكلة.
+  - **تكرار لا طائل منه:** مجرد غلاف وهمي غير مفيد فوق `DbSet<T>` القائم أصلاً في EF Core.
 
-### الخيار 2: كشف `IQueryable<T>` للجميع عبر واجهة `IIdentityUnitOfWork` واحدة
-* **الوصف:** واجهة تحتوي على خصائص `IQueryable<T>` لكل جدول + `Add<TEntity>` عامة + `SaveChangesAsync`.
-* **لماذا رُفض جزئياً؟**
-  - في جهة الكتابة: يسمح للـ Command Handlers باسترجاع الكيان مجتزءاً دون تحميل الـ Navigation Properties الأساسية، فتعمل قواعد العمل على حالة ناقصة بصمت.
-  - يسمح بتعديل الكيانات التابعة مباشرة دون المرور بالـ Aggregate Root.
-  - يصعّب عمل Unit Tests مع Mocking لمنطق الـ Commands بسبب صعوبة عمل Mock لـ `IQueryable` و `DbSet`.
+### الخيار 2: Specific Repositories منفصلة لكل من القراءة والكتابة
+* **الوصف:** واجهة خاصة لكل Aggregate تحتوي دوال التعديل ودوال القراءة (مثل `GetBranchForCardAsync`).
+* **ما نكسبه:** عزل كامل لطبقة الـ Application عن أي تفاصيل لـ EF Core.
+* **ما نخسره (لماذا رُفض؟):**
+  - **نخسر سرعة التطوير (Developer Velocity):** كل تعديل في الواجهة يتطلب إضافة دالة جديدة في الـ Interface وكتابة تنفيذها في الـ Infrastructure.
+  - **نخسر صيانة الكود:** انفجار هائل في عدد دوال الاستعلام داخل ملف الـ Repository.
+  - **نخسر كفاءة الذاكرة:** صعوبة عمل Custom DTO Projection لكل سيناريو يؤدي إلى جلب كائنات كاملة وتحويلها في الذاكرة.
 
-### الخيار 3: Specific Repositories منفصلة لكل عملية قراءة وكتابة
-* **الوصف:** كتابة واجهة مخصصة لكل Aggregate تحتوي على دوال لكل أمر ولكل استعلام شاشة (مثل `GetBranchesForDropdownAsync`).
-* **لماذا رُفض جزئياً؟**
-  - ممتاز لجهة الكتابة، لكنه كارثي لجهة القراءة.
-  - يؤدي إلى تضخم هائل في عدد الدوال بالواجهات عند كل تعديل بسيط في شاشات العرض.
-  - يجبر القراءة على جلب Aggregates كاملة ثم تحويلها إلى DTOs في الذاكرة مما يسبب استهلاكاً غير مبرر للذاكرة وبطء في الاستعلامات.
+### الخيار 3: كشف `DbContext` المباشر للجميع دون Repositories
+* **الوصف:** حقن الـ `DbContext` في كل Command Handler وكل Query Handler.
+* **ما نكسبه:** أقصى درجات المرونة والسرعة في كتابة الاستعلامات.
+* **ما نخسره (لماذا رُفض؟):**
+  - **نخسر حماية الـ Domain تماماً:** أي مطور يستطيع استدعاء أي جدول وتعديل أي كيان فرعي مباشرة.
+  - **نخسر قابلية الاختبار (Testability):** يستحيل عمل Mock لـ `DbContext` بسهولة في الـ Unit Tests لمسار الـ Commands الحرج.
 
-### الخيار 4: النموذج الهجين المتوافق مع CQRS (Hybrid Persistence Model) — [المختار]
-* **الوصف:** فصل كامل في استراتيجية الوصول للبيانات بين مسار الكتابة ومسار القراءة.
+### الخيار 4: النموذج الهجين المتوافق مع CQRS (Hybrid Persistence Model) — [الحل المختار]
+* **الوصف:** فصل كامل: **Specific Repository** للـ Aggregate Root فقط في مسار الكتابة، و **Read DbContext مع `IQueryable`** بوضع `AsNoTracking` في مسار القراءة.
+* **ما نكسبه:**
+  - ✅ **حماية مطلقة للـ Invariants:** لا يوجد طريق لتعديل البيانات إلا عبر الـ Aggregate Root كاملاً.
+  - ✅ **أداء فائق في القراءة (Zero-Allocation & Minimal SQL):** استخدام `.Select()` المباشر يجلب الأعمدة المطلوبة فقط من Postgres.
+  - ✅ **سهولة اختبار الـ Commands:** اختبار الـ Handlers عبر Mock سريع لـ `IBranchRepository`.
+  - ✅ **عدم انفجار الدوال:** استعلامات القراءة تكتب شكل بياناتها بحرية في الـ Handler الخاص بها.
+* **ما نخسره (التكلفة المقبولة):**
+  - ⚠️ **وجود واجهتين مختلفتين في الـ Application:** واجهة للكتابة وواجهة للقراءة (يتطلب التزام الفريق بالنمط).
+  - ⚠️ **ارتباط مسار القراءة بـ EF Core LINQ:** طبقة التطبيق تحتاج حزمة `Microsoft.EntityFrameworkCore` المجردة لاستخدام `ToListAsync`.
 
 ---
 
-## 3. القرار المعماري (The Decision)
+## 5. الحل الذي اخترناه وطريقة العمل بالتفصيل (The Chosen Architecture)
 
-اعتمدنا رسمياً **النموذج الهجين المتوافق مع مبدأ CQRS**:
+اعتمدنا رسمياً **نموذج الوصول الهجين (Hybrid CQRS Persistence)** كما هو موضح في المخطط التالي:
 
 ```
-                              ┌─────────────────────────────────────────┐
-                              │        Application Layer Use Cases      │
-                              └──────────────────┬──────────────────────┘
-                                                 │
-                   ┌─────────────────────────────┴─────────────────────────────┐
-                   ▼                                                           ▼
-       [Write Side: Commands]                                      [Read Side: Queries]
-  ┌─────────────────────────────────┐                         ┌─────────────────────────────────┐
-  │   I{Aggregate}Repository        │                         │      IIdentityReadDbContext     │
-  │   + IUnitOfWork                 │                         │   (AsNoTracking IQueryable)     │
-  └────────────────┬────────────────┘                         └────────────────┬────────────────┘
-                   │                                                           │
-                   │ Returns: Full Aggregates                                  │ Returns: Fast DTO Projections
-                   ▼                                                           ▼
-       ┌───────────────────────┐                                   ┌───────────────────────┐
-       │ PostgreSQL (Tracking) │                                   │ Postgres (NoTracking) │
-       └───────────────────────┘                                   └───────────────────────┘
+                               ┌─────────────────────────────────────────┐
+                               │        Application Layer Use Cases      │
+                               └──────────────────┬──────────────────────┘
+                                                  │
+                    ┌─────────────────────────────┴─────────────────────────────┐
+                    ▼                                                           ▼
+        [مسار الكتابة: Commands]                                    [مسار القراءة: Queries]
+   ┌─────────────────────────────────┐                         ┌─────────────────────────────────┐
+   │    I{Aggregate}Repository       │                         │      IIdentityReadDbContext     │
+   │    + IUnitOfWork                │                         │    (AsNoTracking IQueryable)    │
+   └────────────────┬────────────────┘                         └────────────────┬────────────────┘
+                    │                                                           │
+                    │ يُرجع الكيان كاملاً للذاكرة                               │ يُسقط فقط الأعمدة المطلوبة
+                    │ Returns: Full Aggregate                                   │ Returns: Custom Projected DTO
+                    ▼                                                           ▼
+        ┌───────────────────────┐                                   ┌───────────────────────┐
+        │  PostgreSQL (Tracked) │                                   │ Postgres (NoTracking) │
+        └───────────────────────┘                                   └───────────────────────┘
 ```
 
-### القواعد المعمارية الإلزامية لهذا القرار:
+### طريقة العمل في مسار الكتابة (Commands Path):
+1. يتم إنشاء واجهة Repository فقط للـ **Aggregate Root** (مثل `IBranchRepository`).
+2. يُمنع منعاً باتاً إنشاء Repository لأي Child Entity (ممنوع `IOperatingHoursRepository`).
+3. دوال الـ Repository تعيد الكيان مكتملاً ومعه كل سجلاته التابعة:
+   ```csharp
+   Task<Branch?> GetByIdAsync(Guid id, CancellationToken ct);
+   ```
+4. الـ Command Handler يجلب الكيان، ينفذ منطق العمل عبر دوال الدومين المغلقة (`branch.Update(...)`)، ثم يستدعي `IUnitOfWork.SaveChangesAsync()`.
+5. هذا يضمن أن EF Core يتتبع التغييرات وينفذ Transaction ذرية سليمة.
 
-1. **جهة الكتابة (Commands Path):**
-   - تُدار حصراً عبر **Specific Repositories** لكل **Aggregate Root فقط** (مثل `IBranchRepository`, `IUserRepository`, `IRoleRepository`).
-   - يُمنع إنشاء Repository لأي كيان تابع (Child Entity).
-   - دوال الـ Repository لا تُرجع `IQueryable` أبداً؛ بل تُرجع الكيان كاملاً (`Task<Branch?>`) أو نتائج منطقية (`Task<bool> ExistsByCodeAsync`).
-   - دالة `GetByIdAsync` مسؤولة مسؤولية كاملة عن تحميل كل الـ Child Collections اللازمة لحماية شروط العمل (Invariants).
-   - يتم تقليل التكرار البرمجي في الـ Infrastructure عبر Base Class داخلية:
-     `Repository<TAggregate> where TAggregate : AggregateRoot`.
-   - واجهة `IUnitOfWork` منفصلة وتحتوي فقط على `SaveChangesAsync` لضمان إتمام المعاملة الذرية (Atomic Transaction) على مستوى الطلب كاملاً.
-
-2. **جهة القراءة (Queries Path):**
-   - تُدار عبر واجهة قراءة مخصصة: `IIdentityReadDbContext`.
-   - تكشف الجداول كـ `IQueryable<T>` بوضعية `AsNoTracking` تلقائياً.
-   - يمنع منعاً باتاً استدعاء `Add`, `Update`, `Remove`, أو `SaveChangesAsync` في Query Handlers.
-   - يجب أن تستخدم الـ Handlers دالة `.Select()` لتحويل البيانات مباشرة إلى DTOs على مستوى قاعدة البيانات (SQL Projections).
-   - الاستعلامات المشتركة أو المعقدة يُعاد استخدامها عبر **LINQ Extension Methods**.
-
----
-
-## 4. المبررات الفنية (Architectural Rationale)
-
-| الخاصية | جهة الكتابة (Commands) | جهة القراءة (Queries) | لماذا اختلف النهجان؟ |
-| :--- | :--- | :--- | :--- |
-| **الهدف الأساسي** | حماية الاتساق وصحة البيانات (Consistency & Invariants) | كفاءة وسرعة جلب البيانات (Latency & Throughput) | قوى التصميم المتناقضة تفرض أدوات مختلفة. |
-| **وحدة البيانات** | Aggregate Root كامل محملاً في الذاكرة | Projected DTO (أعمدة محددة فقط) | الكتابة تتطلب رؤية الحالة كاملة؛ القراءة تحتاج فقط ما يظهر على الشاشة. |
-| **تتبع الحالة (Tracking)** | مطلوب (Change Tracker) | معطل (`AsNoTracking`) | توفير 40-60% من استهلاك الذاكرة والمعالج في القراءة. |
-| **استراتيجية الاختبار** | Unit Tests سريعة بـ Mock للـ Repository | Integration Tests بـ Testcontainers للاستعلام الفعلي | مسار الكتابة فيه تفريعات منطقية تُختبر بـ Mock، ومسار القراءة قيمته في صحة SQL. |
-| **الاستقلال عن ORM** | معزول بالكامل خلف واجهة نقية | مرتبط بـ LINQ Provider بقرار واعٍ | كلفة عزل القراءة أعلى بكثير من عائدها، وإذا لزم الأمر ننتقل إلى Dapper في Handler واحد. |
+### طريقة العمل في مسار القراءة (Queries Path):
+1. نستخدم واجهة مخصصة للقراءة: `IIdentityReadDbContext`.
+2. الجداول معروضة كـ `IQueryable<T>` مفعل عليها `AsNoTracking()` مسبقاً.
+3. لا تحتوي الواجهة على دوال تعديل (`Add`, `Remove`, `SaveChanges`).
+4. الـ Query Handler يستعلم ويسقط البيانات مباشرة بالـ Projection إلى DTO:
+   ```csharp
+   var result = await _readDb.Branches
+       .Where(b => b.Id == query.BranchId)
+       .Select(b => new BranchDetailResponse(
+           Id: b.Id,
+           Name: b.Name,
+           Street: b.Address.Street,
+           ...))
+       .FirstOrDefaultAsync(ct);
+   ```
+5. يترجم EF Core هذا الكود إلى استعلام SQL دقيق يطلب فقط الأعمدة المذكورة، بدون تتبع في الذاكرة وبأقل استهلاك للموارد.
 
 ---
 
-## 5. المقايضات (Trade-offs: What We Gained vs What We Sacrificed)
+## 6. زاوية المقابلة التقنية (Senior Interview Defense)
 
-### ما كسبناه (Gains):
-* **صفر تلاعب في الـ Invariants:** مستحيل لمطور تعديل ساعات عمل أو رصيد أو صلاحيات دون تفعيل قواعد الـ Domain Entity.
-* **حماية تامة من Over-fetching:** استعلامات القراءة تطلب من PostgreSQL الأعمدة اللازمة للـ DTO فقط عبر SQL Projection.
-* **اختبارات وحدة فائقة السرعة للمنطق الحرج:** نستطيع اختبار 100 سيناريو فشل ونجاح للـ Command Handlers بـ Mock بسيط وسريع.
-* **كود نظيف و DRY:** تخلصنا من انفجار دوال الـ Repositories في القراءة، واستخدمنا Base Class لتقليل كود الـ Repositories في الكتابة.
+لو سُئلت في مقابلة عمل تقنية:  
+> **"لماذا لم تستخدم Generic Repository في مشروعك؟ ولماذا تفصل الوصول للبيانات بين مسار الكتابة والقراءة؟"**
 
-### ما ضحينا به (Sacrifices / Liabilities):
-* **وجود واجهتين مختلفتين للبيانات:** يحتاج المطور الجديد إلى فهم واضح متى يحقن `I{Entity}Repository` ومتى يحقن `IIdentityReadDbContext`.
-* **اعتماد طبقة Application على حزمة EF Core Abstractions:** لاستخدام `ToListAsync` و `FirstOrDefaultAsync` في جهة القراءة، تم السماح لطبقة Application بالاعتماد على حزمة `Microsoft.EntityFrameworkCore` المجردة (بدون تضمين Npgsql أو التفاصيل التحتية).
+### الإجابة المقنعة والعميقة التي تبدأ بشرح المشكلة أولاً:
 
----
-
-## 6. متى يُعاد النظر في هذا القرار؟ (Reconsideration Conditions)
-
-يجب إعادة فتح ومراجعة هذا الـ ADR في الحالات التالية فقط:
-1. **إذا تحولت الخدمة إلى CRUD بحت:** إذا تم تفريغ الـ Domain من القواعد وأصبح مجرد نقل جداول، يُلغى الـ Repository ويُعتمد `DbContext` مباشرة للكل لتقليل الطبقات.
-2. **إذا ظهرت اختناقات أداء حادة في القراءة:** يتم استبدال استعلامات القراءة في `IIdentityReadDbContext` لـ Handler معين باستخدام **Dapper** مع كتابة استعلام SQL يدوي، دون أي تغيير في جهة الـ Command Repositories.
-3. **إذا تقرر تقسيم قاعدة البيانات (Polyglot Persistence):** كأن تُحفظ سجلات الـ Events في MongoDb والجداول في Postgres؛ وقتها تنعزل Repositories الكتابة بسلاسة تامة.
-
----
-
-## 7. المراجع المعمارية المعتمدة (References)
-
-1. **Eric Evans (2003)** - *Domain-Driven Design: Tackling Complexity in the Heart of Software* (Chapter 6: The Life Cycle of a Domain Object - Repositories).
-2. **Vaughn Vernon (2013)** - *Implementing Domain-Driven Design* (Chapter 12: Repositories & Chapter 4: CQRS).
-3. **Martin Fowler** - *Catalog of Patterns of Enterprise Application Architecture* ([Repository Pattern](https://martinfowler.com/eaaCatalog/repository.html) & [CQRS Bliki](https://martinfowler.com/bliki/CQRS.html)).
-4. **Microsoft Architecture Guides** - *.NET Microservices: Architecture for Containerized .NET Applications* ([Applying Simplified CQRS and DDD Patterns](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns) & [CQRS Reads with Dapper/EF](https://learn.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/cqrs-microservice-reads)).
-5. **Vladimir Khorikov (2020)** - *Unit Testing Principles, Practices, and Patterns* (Manning Publications - Domain vs Orchestration Testing).
+> **المشكلة الأساسية:**  
+> "في أنظمة المؤسسات المبنية بـ Domain-Driven Design و Clean Architecture، نواجه صراعاً كلاسيكياً بين أمرين:  
+> في **الكتابة**، أنت بحاجة لحماية قواعد العمل (Domain Invariants)، مما يفرض جلب الـ Aggregate Root كاملاً والتحكم الصارم في حدوده.  
+> بينما في **القراءة**، هدفك الوحيد هو الأداء وتقليل زمن الاستجابة (Latency)، مما يفرض عليك جلب حقول مخصصة فقط (Projections) بدون تتبع (NoTracking).  
+>
+> لو استخدمنا **Generic Repository**، سنقع في مشكلتين قاتلتين: أولاً سنكسر حدود الـ Aggregate لأننا سنعامل الجداول الفرعية كأنها كيانات مستقلة، وثانياً سنعجز عن عمل LINQ Projections مرنة تمنع الـ Over-fetching بدون تسريب تفاصيل الـ ORM.  
+>
+> **لهذا السبب اخترت النموذج الهجين المتوافق مع CQRS:**  
+> 1. **في مسار الأوامر (Commands):** استخدمت **Specific Repositories** محصورة فقط على الـ Aggregate Roots، تُرجع الكيان كاملاً لضمان عدم حدوث أي تعديل إلا من خلال دوال الدومين المحمية، وتتيح لي عمل Mock سريع للـ Unit Tests.  
+> 2. **في مسار الاستعلامات (Queries):** استخدمت واجهة قراءة مخصصة `IIdentityReadDbContext` تكشف `IQueryable` بوضع `AsNoTracking`، مما يسمح للـ Handlers بعمل Projection مباشر إلى DTOs داخل استعلام الـ SQL نفسه.  
+>
+> **المقايضة التي قبلتها (The Trade-off):**  
+> كسبنا أماناً تاماً للبيانات وسرعة قصوى في القراءة وصفر تضخم في دوال الـ Repositories، مقابل تضحية بسيطة وهي وجود واجهتين منفصلتين واعتماد طبقة التطبيق على حزمة تجريد EF Core للاستعلامات."
