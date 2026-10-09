@@ -7,7 +7,8 @@ namespace SuperMarket.Identity.Application.Branches.Commands.DeleteBranch;
 
 /// <summary>
 /// Orchestrates the soft deletion of a retail branch.
-/// Applies domain invariants preventing operations on already-deleted branches and locks future modifications.
+/// Enforces domain invariants preventing operations on already-deleted branches and locks future modifications.
+/// Audit metadata (DeletedBy, DeletedAt) is populated automatically via AuditSaveChangesInterceptor.
 /// </summary>
 public sealed class DeleteBranchCommandHandler(
     IBranchRepository _branchRepository,
@@ -26,7 +27,7 @@ public sealed class DeleteBranchCommandHandler(
             return Result.Failure(BranchErrors.NotFound);
         }
 
-        var deleteResult = branch.SoftDelete(command.DeletedBy);
+        var deleteResult = branch.SoftDelete();
         if (deleteResult.IsFailure)
         {
             return deleteResult;
