@@ -16,4 +16,9 @@ public interface IRoleRepository
 
     void Add(Role role);
     void Remove(Role role);
+
+    /// <summary>
+    /// Registers join entity links connecting a role to permission groups in the change tracker.
+    /// </summary>
+    void AddRolePermissionGroups(IEnumerable<RolePermissionGroup> rolePermissionGroups);
 }

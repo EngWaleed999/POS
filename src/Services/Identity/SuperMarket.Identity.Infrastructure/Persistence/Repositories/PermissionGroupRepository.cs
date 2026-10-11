@@ -13,4 +13,20 @@ internal sealed class PermissionGroupRepository(IdentityDbContext dbContext)
         return await DbContext.PermissionGroups
             .AnyAsync(g => g.GroupName == groupName, cancellationToken);
     }
+
+    public async Task<bool> AllExistAsync(IEnumerable<Guid> groupIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(groupIds);
+
+        var distinctIds = groupIds.Distinct().ToList();
+        if (distinctIds.Count == 0)
+        {
+            return true;
+        }
+
+        var existingCount = await DbContext.PermissionGroups
+            .CountAsync(g => distinctIds.Contains(g.Id), cancellationToken);
+
+        return existingCount == distinctIds.Count;
+    }
 }

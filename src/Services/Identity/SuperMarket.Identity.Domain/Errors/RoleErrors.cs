@@ -17,4 +17,10 @@ public static class RoleErrors
 
     public static readonly Error AlreadyDeactivated =
         Error.Conflict("Role.AlreadyDeactivated", "Role is already deactivated.");
+
+    public static readonly Error NameAlreadyExists =
+        Error.Conflict("Role.NameAlreadyExists", "A role with the specified name already exists.");
+
+    public static readonly Error NotFound =
+        Error.NotFound("Role.NotFound", "The requested role was not found.");
 }

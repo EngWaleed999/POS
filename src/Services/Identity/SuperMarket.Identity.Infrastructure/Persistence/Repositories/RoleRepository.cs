@@ -13,4 +13,10 @@ internal sealed class RoleRepository(IdentityDbContext dbContext)
         return await DbContext.Roles
             .AnyAsync(r => r.RoleName == roleName, cancellationToken);
     }
+
+    public void AddRolePermissionGroups(IEnumerable<RolePermissionGroup> rolePermissionGroups)
+    {
+        ArgumentNullException.ThrowIfNull(rolePermissionGroups);
+        DbContext.RolePermissionGroups.AddRange(rolePermissionGroups);
+    }
 }

@@ -16,6 +16,10 @@ public interface IPermissionGroupRepository
     
         void Add(PermissionGroup group);
 
-    
         void Remove(PermissionGroup group);
+
+        /// <summary>
+        /// Validates that all supplied permission group identifiers exist in the database.
+        /// </summary>
+        Task<bool> AllExistAsync(IEnumerable<Guid> groupIds, CancellationToken cancellationToken = default);
 }
