@@ -13,7 +13,7 @@ public static class IdentitySeedCatalog
         string Scope,
         string Category)
     {
-        public string Key => $"{Resource.ToLowerInvariant()}:{Action.ToLowerInvariant()}:{Scope.ToLowerInvariant()}";
+        public string Key { get; } = $"{Resource.ToLowerInvariant()}:{Action.ToLowerInvariant()}:{Scope.ToLowerInvariant()}";
     }
 
     public sealed record PermissionGroupDefinition(
