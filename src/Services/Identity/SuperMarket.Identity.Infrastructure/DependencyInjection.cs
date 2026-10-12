@@ -50,6 +50,9 @@ public static class DependencyInjection
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
 
+        // Register Database Seeding
+        services.AddScoped<IIdentityDataSeeder, SuperMarket.Identity.Infrastructure.Data.Seeding.IdentityDataSeeder>();
+
         return services;
     }
 }
