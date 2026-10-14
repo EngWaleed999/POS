@@ -21,6 +21,9 @@ public interface IIdentityReadDbContext
 
     IQueryable<PermissionGroup> PermissionGroups { get; }
 
-   
+    IQueryable<PermissionGroupItem> PermissionGroupItems { get; }
+
+    IQueryable<RolePermissionGroup> RolePermissionGroups { get; }
+
     IQueryable<POSRegister> POSRegisters { get; }
 }

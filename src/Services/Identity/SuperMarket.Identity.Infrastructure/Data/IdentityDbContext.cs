@@ -37,6 +37,8 @@ public class IdentityDbContext : DbContext, IUnitOfWork, IIdentityReadDbContext
     IQueryable<Role> IIdentityReadDbContext.Roles => Set<Role>().AsNoTracking();
     IQueryable<Permission> IIdentityReadDbContext.Permissions => Set<Permission>().AsNoTracking();
     IQueryable<PermissionGroup> IIdentityReadDbContext.PermissionGroups => Set<PermissionGroup>().AsNoTracking();
+    IQueryable<PermissionGroupItem> IIdentityReadDbContext.PermissionGroupItems => Set<PermissionGroupItem>().AsNoTracking();
+    IQueryable<RolePermissionGroup> IIdentityReadDbContext.RolePermissionGroups => Set<RolePermissionGroup>().AsNoTracking();
     IQueryable<POSRegister> IIdentityReadDbContext.POSRegisters => Set<POSRegister>().AsNoTracking();
 
     // IUnitOfWork Implementation (Coordinates atomic commit for commands)
