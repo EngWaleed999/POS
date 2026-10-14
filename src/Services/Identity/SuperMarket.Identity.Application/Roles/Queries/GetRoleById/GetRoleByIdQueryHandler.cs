@@ -47,20 +47,20 @@ public sealed class GetRoleByIdQueryHandler : IDtoQueryHandler<GetRoleByIdQuery,
             join g in _readDb.PermissionGroups on rpg.GroupId equals g.Id
             orderby g.GroupName
             select new RolePermissionGroupResponse(
-                g.Id,
-                g.GroupName,
-                g.Description,
-                _readDb.PermissionGroupItems.Count(pgi => pgi.GroupId == g.Id)
+                GroupId: g.Id,
+                GroupName: g.GroupName,
+                Description: g.Description,
+                PermissionsCount: _readDb.PermissionGroupItems.Count(pgi => pgi.GroupId == g.Id)
             )
         ).ToListAsync(cancellationToken);
 
         var response = new RoleDetailResponse(
-            role.Id,
-            role.RoleName,
-            role.Description,
-            role.IsActive,
-            role.CreatedAt,
-            assignedGroups);
+            Id: role.Id,
+            RoleName: role.RoleName,
+            Description: role.Description,
+            IsActive: role.IsActive,
+            CreatedAt: role.CreatedAt,
+            AssignedGroups: assignedGroups);
 
         return Result.Success(response);
     }

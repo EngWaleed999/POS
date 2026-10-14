@@ -55,12 +55,12 @@ public sealed class ListPermissionGroupsQueryHandler
         {
             p.GroupId,
             Permission = new PermissionSummaryResponse(
-                p.Id,
-                p.Resource,
-                p.Action,
-                p.Scope,
-                p.Category,
-                $"{p.Resource.ToLowerInvariant()}:{p.Action.ToLowerInvariant()}:{p.Scope.ToLowerInvariant()}")
+                Id: p.Id,
+                Resource: p.Resource,
+                Action: p.Action,
+                Scope: p.Scope,
+                Category: p.Category,
+                Key: $"{p.Resource.ToLowerInvariant()}:{p.Action.ToLowerInvariant()}:{p.Scope.ToLowerInvariant()}")
         });
 
         // 4. Group permissions by GroupId in-memory lookup
@@ -68,11 +68,11 @@ public sealed class ListPermissionGroupsQueryHandler
 
         // 5. Assemble final DTO response
         var response = groups.Select(g => new PermissionGroupSummaryResponse(
-            g.Id,
-            g.GroupName,
-            g.Description,
-            permissionsLookup[g.Id].Count(),
-            permissionsLookup[g.Id].ToList()
+            Id: g.Id,
+            GroupName: g.GroupName,
+            Description: g.Description,
+            PermissionsCount: permissionsLookup[g.Id].Count(),
+            Permissions: permissionsLookup[g.Id].ToList()
         )).ToList();
 
         return Result.Success<IReadOnlyList<PermissionGroupSummaryResponse>>(response);
