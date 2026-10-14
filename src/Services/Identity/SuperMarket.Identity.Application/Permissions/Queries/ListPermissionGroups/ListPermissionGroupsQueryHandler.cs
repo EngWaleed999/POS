@@ -10,7 +10,7 @@ namespace SuperMarket.Identity.Application.Permissions.Queries.ListPermissionGro
 /// Executes two optimized SQL queries and joins them in memory to eliminate N+1 overhead.
 /// </summary>
 public sealed class ListPermissionGroupsQueryHandler 
-    : IDtoQueryHandler<ListPermissionGroupsQuery, IReadOnlyList<PermissionGroupSummaryResponse>>
+    : IListQueryHandler<ListPermissionGroupsQuery, PermissionGroupSummaryResponse>
 {
     private readonly IIdentityReadDbContext _readDb;
 
@@ -34,28 +34,39 @@ public sealed class ListPermissionGroupsQueryHandler
             })
             .ToListAsync(cancellationToken);
 
-        // 2. Fetch all group-permission mappings with permission metadata
-        var groupPermissions = await (
+        // 2. Fetch all group-permission mappings with atomic permission data
+        var rawGroupPermissions = await (
             from pgi in _readDb.PermissionGroupItems
             join p in _readDb.Permissions on pgi.PermissionId equals p.Id
             orderby p.Resource, p.Action
             select new
             {
                 pgi.GroupId,
-                Permission = new PermissionSummaryResponse(
-                    p.Id,
-                    p.Resource,
-                    p.Action,
-                    p.Scope,
-                    p.Category,
-                    $"{p.Resource.ToLower()}:{p.Action.ToLower()}:{p.Scope.ToLower()}")
+                p.Id,
+                p.Resource,
+                p.Action,
+                p.Scope,
+                p.Category
             }
         ).ToListAsync(cancellationToken);
 
-        // 3. Group permissions by GroupId in-memory lookup
+        // 3. Map to DTO in memory (computes canonical permission key)
+        var groupPermissions = rawGroupPermissions.Select(p => new
+        {
+            p.GroupId,
+            Permission = new PermissionSummaryResponse(
+                p.Id,
+                p.Resource,
+                p.Action,
+                p.Scope,
+                p.Category,
+                $"{p.Resource.ToLowerInvariant()}:{p.Action.ToLowerInvariant()}:{p.Scope.ToLowerInvariant()}")
+        });
+
+        // 4. Group permissions by GroupId in-memory lookup
         var permissionsLookup = groupPermissions.ToLookup(x => x.GroupId, x => x.Permission);
 
-        // 4. Assemble final DTO response
+        // 5. Assemble final DTO response
         var response = groups.Select(g => new PermissionGroupSummaryResponse(
             g.Id,
             g.GroupName,

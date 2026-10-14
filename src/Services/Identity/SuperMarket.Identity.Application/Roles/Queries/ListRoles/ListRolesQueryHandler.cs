@@ -45,7 +45,7 @@ public sealed class ListRolesQueryHandler : IPagedQueryHandler<ListRolesQuery, R
                 RoleName: r.RoleName,
                 Description: r.Description,
                 IsActive: r.IsActive,
-                PermissionGroupCount: _readDb.RolePermissionGroups.Count(rpg => rpg.RoleId == r.Id),
+                PermissionGroupsCount: _readDb.RolePermissionGroups.Count(rpg => rpg.RoleId == r.Id),
                 CreatedAt: r.CreatedAt));
 
         // 4. Execute pagination via BuildingBlocks PagedList
