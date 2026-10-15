@@ -21,4 +21,14 @@ public interface IRoleRepository
     /// Registers join entity links connecting a role to permission groups in the change tracker.
     /// </summary>
     void AddRolePermissionGroups(IEnumerable<RolePermissionGroup> rolePermissionGroups);
+
+    /// <summary>
+    /// Retrieves all existing role-group join links for a given role identifier.
+    /// </summary>
+    Task<List<RolePermissionGroup>> GetRolePermissionGroupsAsync(Guid roleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes specified role-group join links from the change tracker.
+    /// </summary>
+    void RemoveRolePermissionGroups(IEnumerable<RolePermissionGroup> rolePermissionGroups);
 }

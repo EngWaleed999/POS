@@ -19,4 +19,17 @@ internal sealed class RoleRepository(IdentityDbContext dbContext)
         ArgumentNullException.ThrowIfNull(rolePermissionGroups);
         DbContext.RolePermissionGroups.AddRange(rolePermissionGroups);
     }
+
+    public async Task<List<RolePermissionGroup>> GetRolePermissionGroupsAsync(Guid roleId, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.RolePermissionGroups
+            .Where(rpg => rpg.RoleId == roleId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public void RemoveRolePermissionGroups(IEnumerable<RolePermissionGroup> rolePermissionGroups)
+    {
+        ArgumentNullException.ThrowIfNull(rolePermissionGroups);
+        DbContext.RolePermissionGroups.RemoveRange(rolePermissionGroups);
+    }
 }
