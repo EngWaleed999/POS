@@ -1,6 +1,69 @@
-@SuperMarket.Identity.API_HostAddress = http://localhost:5169
+@HostAddress = http://localhost:5169
 
-GET {{SuperMarket.Identity.API_HostAddress}}/weatherforecast/
+### 1. List All Permission Groups (With Constituent Permissions Catalog)
+GET {{HostAddress}}/api/v1/permission-groups
 Accept: application/json
+
+###
+
+### 2. Create a Dynamic System Role (e.g. Senior Cashier)
+POST {{HostAddress}}/api/v1/roles
+Content-Type: application/json
+Accept: application/json
+
+{
+  "roleName": "senior-cashier",
+  "description": "Senior cashier with POS register and daily closing privileges."
+}
+
+###
+
+### 3. List Dynamic Roles (Paginated with Search & Filters)
+GET {{HostAddress}}/api/v1/roles?page=1&pageSize=10&search=cashier&isActive=true
+Accept: application/json
+
+###
+
+### 4. Get Role Details By ID (Replace with created role GUID)
+@RoleId = 00000000-0000-0000-0000-000000000000
+GET {{HostAddress}}/api/v1/roles/{{RoleId}}
+Accept: application/json
+
+###
+
+### 5. Synchronize Assigned Permission Groups (Full Sync - ADR-004 & ADR-005)
+PUT {{HostAddress}}/api/v1/roles/{{RoleId}}/permission-groups
+Content-Type: application/json
+Accept: application/json
+
+{
+  "permissionGroupIds": [
+    "00000000-0000-0000-0000-000000000001",
+    "00000000-0000-0000-0000-000000000002"
+  ]
+}
+
+###
+
+### 6. Edge Case: Revoke All Permissions (Empty Array - Vacuous Truth Semantics)
+PUT {{HostAddress}}/api/v1/roles/{{RoleId}}/permission-groups
+Content-Type: application/json
+Accept: application/json
+
+{
+  "permissionGroupIds": []
+}
+
+###
+
+### 7. Edge Case: Validation Failure (Empty Role Name - RFC 7807 ProblemDetails)
+POST {{HostAddress}}/api/v1/roles
+Content-Type: application/json
+Accept: application/json
+
+{
+  "roleName": "",
+  "description": ""
+}
 
 ###
