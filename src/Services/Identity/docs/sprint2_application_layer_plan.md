@@ -508,16 +508,98 @@ public sealed class GetBranchByIdQueryHandler(IIdentityReadDbContext readDb)
 
 ---
 
-### 🔴 المرحلة 4: إدارة الموظفين (Staff Management)
-> **هدفها:** تسجيل الموظفين وإدارة حساباتهم.
+### 🔴 المرحلة 4: إدارة الموظفين والربط مع Keycloak (Staff Management & IAM Integration)
+> **هدفها:** إدارة دورة حياة الموظفين والكاشيرات، وتأمين كود الـ PIN السريع، والربط المباشر مع نظام الهوية المركزي **Keycloak**.
 
-| الخطوة | الملف | الوصف |
-|--------|------|-------|
-| 4.1 | `Staff/Commands/RegisterStaff/` | تسجيل موظف جديد وربطه بفرع ودور |
-| 4.2 | `Staff/Commands/SetStaffPin/` | تعيين PIN مشفر للكاشير |
-| 4.3 | `Staff/Commands/TransferStaff/` | نقل موظف لفرع آخر |
-| 4.4 | `Staff/Queries/GetStaffById/` | استعراض بيانات موظف |
-| 4.5 | `Staff/EventHandlers/` | معالجة أحداث الموظفين |
+#### 4.0 المعمارية الحاكمة والحدود مع Keycloak (Identity Boundaries):
+1. **توزيع المسؤوليات:**
+   * **Keycloak (Identity & Access Management):** المسؤول الحصري عن إصدار رموز الوصول (JWT Access Tokens)، الـ Refresh Tokens، فحص كلمات المرور للمدراء، وحفظ هوية المستخدم المركزية (`KeycloakUserId`).
+   * **SuperMarket.Identity (Local Domain):** المسؤول عن البيانات التشغيلية للفرع (الاسم الكامل، رقم الهاتف، الفرع المخصص، الدور الوظيفي `RoleId`، وحفظ تجزئة كود الـ PIN للكاشير المشفرة بـ Argon2id).
+2. **مشكلة الكتابة المزدوجة (The Dual-Write / Two-Phase Problem):**
+   * عند تسجيل موظف جديد، يجب إنشاء الحساب في Keycloak أولاً، ثم حفظ الكيان محلياً في PostgreSQL.
+   * **آلية التعافي والتعويض (Compensating Transaction):** إذا نجح إنشاء المستخدم في Keycloak ولكن سقطت قاعدة البيانات المحلية أو فشل `SaveChangesAsync()`، يقوم الـ Handler باستدعاء معاملة تعويضية فوراً: `await _identityProviderService.DeleteUserAsync(keycloakUserId)` لمنع بقاء حسابات يتيمة (Orphaned Users) في Keycloak.
+
+```text
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                 Staff Registration & Keycloak Dual-Write Flow               │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ 1. RegisterStaffCommand
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    RegisterStaffCommandHandler (Orchestrator)               │
+│  - Pre-flight Validation: ExistsByUsername, ExistsByPhone, BranchExists     │
+└───────────────────┬─────────────────────────────────────┬───────────────────┘
+                    │ 2. Create User in IAM               │ 4. Save to Local DB
+                    ▼                                     ▼
+     ┌──────────────────────────────┐      ┌─────────────────────────────┐
+     │ Keycloak REST Admin API      │      │ PostgreSQL (IdentityDbContext│
+     │  - Creates Auth Account      │      │  - Creates User Aggregate   │
+     │  - Generates keycloakUserId  │      │  - Stamped via Interceptors │
+     └──────────────┬───────────────┘      └──────────────┬──────────────┘
+                    │                                     │
+                    │ Returns ID: "kc-usr-987"            │ DB Commit Status
+                    ▼                                     ▼
+     ┌──────────────────────────────┐      ┌─────────────────────────────┐
+     │ Success: Proceed to DB Write │      │ Failure: Trigger Rollback   │
+     └──────────────────────────────┘      │ await idp.DeleteUserAsync() │
+                                           └─────────────────────────────┘
+```
+
+#### 4.1 الواجهات التجريدية المطلوبة في `Application/Abstractions/`:
+
+1. **واجهة مزود الهوية (`Abstractions/Authentication/IIdentityProviderService.cs`):**
+```csharp
+public interface IIdentityProviderService
+{
+    Task<Result<string>> CreateUserAsync(
+        string username,
+        string email,
+        string phoneNumber,
+        string fullName,
+        string initialPassword,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> AssignRoleAsync(
+        string keycloakUserId,
+        string roleName,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> SetUserActiveStatusAsync(
+        string keycloakUserId,
+        bool isActive,
+        CancellationToken cancellationToken = default);
+
+    Task<Result> DeleteUserAsync(
+        string keycloakUserId,
+        CancellationToken cancellationToken = default);
+}
+```
+
+2. **واجهة تشفير الـ PIN لكاشيرات نقاط البيع (`Abstractions/Cryptography/IPinHasher.cs`):**
+```csharp
+public interface IPinHasher
+{
+    string HashPin(string rawPin);
+    bool VerifyPin(string rawPin, string pinHash);
+}
+```
+
+---
+
+#### 4.2 قائمة المهام التفصيلية لكتلة الموظفين (Staff Tasks):
+
+| الخطوة | المكون / الملف | الوصف المعماري |
+|:---|:---|:---|
+| **4.1** | `Staff/Commands/RegisterStaff/` | **إنشاء موظف جديد:** التحقق من الفرع والدور $\rightarrow$ إنشاء حساب Keycloak $\rightarrow$ إنشاء كائن `User` محلياً $\rightarrow$ حفظ، مع آلية التعويض التلقائي (Rollback) عند فشل الحفظ. |
+| **4.2** | `Staff/Commands/SetStaffPin/` | **تعيين / تغيير PIN الكاشير:** التحقق من صيغة الـ PIN (4 إلى 6 أرقام، غير مكررة 1111، وغير متسلسلة 1234) وتشفيرها عبر خوارزمية Argon2id. |
+| **4.3** | `Staff/Commands/TransferStaff/` | **نقل موظف لفرع آخر:** التحقق من وجود الفرع الجديد وحالته النشطة، واستدعاء `user.TransferToBranch(newBranchId)` الذي يطلق `UserTransferredDomainEvent`. |
+| **4.4** | `Staff/Commands/ChangeStaffRole/` | **تعديل الدور الوظيفي:** استدعاء `user.ChangeRole(newRoleId)` مع مزامنة الدور الجديد في Keycloak. |
+| **4.5** | `Staff/Commands/DeactivateStaff/` | **تعطيل حساب موظف:** تعطيل الكيان محلياً وتعطيل الحساب في Keycloak فوراً لمنع إصدار أي Tokens جديدة. |
+| **4.6** | `Staff/Commands/ActivateStaff/` | **إعادة تفعيل موظف:** إعادة تنشيط الحساب محلياً وفي Keycloak. |
+| **4.7** | `Staff/Queries/GetStaffById/` | **استعراض تفاصيل موظف:** قراءة بيانات الموظف مع تفاصيل الفرع والدور كـ DTO (`StaffDetailResponse`) بـ `AsNoTracking`. |
+| **4.8** | `Staff/Queries/ListStaff/` | **استعراض قائمة الموظفين:** ترقيم بالـ Offset مع فلاتر حسب الفرع والدور والحالة وبحث بالاسم أو الهاتف (`StaffSummaryResponse`). |
+| **4.9** | `Staff/EventHandlers/` | **معالجة أحداث الموظفين:**<br>- `UserCreatedEventHandler`: تسجيل سجل التدقيق الأولي.<br>- `UserLockedOutEventHandler`: تسجيل إنذار أمني للتزامن مع كاميرات المراقبة (CCTV).<br>- `UserTransferredEventHandler`: تسجيل سجل النقل الإداري. |
+| **4.10** | `API/Endpoints/StaffEndpoints.cs` | **نقاط نهاية Minimal APIs للموظفين:** تعريض 8 مسارات متكاملة للموظفين وتسجيلها في `Program.cs`. |
 
 ---
 

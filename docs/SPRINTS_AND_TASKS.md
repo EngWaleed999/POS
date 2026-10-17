@@ -118,10 +118,19 @@ flowchart LR
 
 ### 📝 قائمة المهام التفصيلية (Tasks):
 
-#### Task 2.1: أوامر إدارة الفروع والموظفين (Commands & Handlers)
-* [ ] **`CreateBranchCommand` & Handler:** مع فحص تكرار كود الفرع، وإرجاع `Result<Guid>`.
-* [ ] **`RegisterStaffMemberCommand` & Handler:** تسجيل موظف جديد وتعيين دوره وفرعه.
-* [ ] **`TransferStaffBranchCommand` & Handler:** نقل موظف لفرع جديد وإطلاق أحداث التحديث.
+#### Task 2.1: أوامر واستعلامات إدارة الفروع والأدوار (Completed Features)
+* [x] **`Branches CQRS Suite`:** تنفيذ حزمة إدارة الفروع بالكامل مع فحص عدم التكرار، التحقق، ومعالجة الأحداث:
+  * أوامر التعديل والإنشاء: `CreateBranchCommand`, `UpdateBranchCommand`, `ActivateBranchCommand`, `DeactivateBranchCommand`, `DeleteBranchCommand`.
+  * استعلامات القراءة المباشرة (AsNoTracking): `GetBranchByIdQuery`, `ListBranchesQuery`.
+* [x] **`Roles & Permissions CQRS Suite`:** إدارة الأدوار ومجموعات الصلاحيات الديناميكية:
+  * `CreateRoleCommand` & Validator & Handler.
+  * `UpdateRolePermissionGroupsCommand` (Full State Synchronization وفق ADR-004 و ADR-005).
+  * `GetRoleByIdQuery`, `ListRolesQuery`, `ListPermissionGroupsQuery`.
+* [ ] **`Staff Management Suite (المرحلة القادمة)`:**
+  * `RegisterStaffMemberCommand` & Handler: تسجيل موظف/كاشير وربطه بفرع ودور أولي.
+  * `TransferStaffBranchCommand` & Handler: نقل موظف لفرع جديد.
+  * `SetStaffPinCommand` & Handler: تعيين رمز الـ PIN المشفر بـ Argon2id.
+  * `GetStaffByIdQuery`, `ListStaffQuery`.
 
 #### Task 2.2: المصادقة السريعة للكاشير (Fast Cashier Login via Keycloak)
 * [ ] **`LoginWithPinCommand`:** الكاشير يرسل كود الموظف والـ PIN ورقم الجهاز:
@@ -135,22 +144,23 @@ flowchart LR
 ---
 
 ## 🌐 Sprint 3: خدمة الهوية — واجهات الـ API والاختبارات (API Endpoints & Verification)
-* **الهدف:** تعريض نقاط النهاية، توثيق OpenAPI، وتكامل معايير RFC 7807 للأخطاء.
+* **الهدف:** تعريض نقاط النهاية بنمط Minimal APIs المنظمة عبر Route Groups (وفق ADR-007)، توثيق OpenAPI / Scalar، وتكامل معايير RFC 7807 للأخطاء.
 * **المشروع المستهدف:** `src/Services/Identity/SuperMarket.Identity.API`
 
 ### 📝 قائمة المهام التفصيلية (Tasks):
 
-#### Task 3.1: نقاط النهاية (Controllers / Minimal APIs)
-* [ ] `/api/v1/auth/cashier-login`: تسجيل الدخول السريع لشاشات الـ POS.
-* [ ] `/api/v1/branches`: إدارة الفروع وساعات العمل.
+#### Task 3.1: نقاط النهاية بنمط Minimal APIs (Route Groups Slices)
+* [x] `/api/v1/branches`: إدارة الفروع وساعات العمل (7 Endpoints متكاملة في `BranchEndpoints.cs`).
+* [x] `/api/v1/roles`: إدارة الأدوار الديناميكية وتخصيص الصلاحيات (4 Endpoints في `RoleEndpoints.cs`).
+* [x] `/api/v1/permission-groups`: استعراض كتالوج باقات الصلاحيات (`PermissionGroupEndpoints.cs`).
 * [ ] `/api/v1/staff`: إدارة الموظفين، الأدوار، وتعيين الـ PIN.
-* [ ] `/api/v1/permissions`: مصفوفة إدارة الصلاحيات وتوزيعها.
+* [ ] `/api/v1/auth/cashier-login`: تسجيل الدخول السريع لشاشات الـ POS.
 
 #### Task 3.2: معالجة الأخطاء الموحدة (RFC 7807 ProblemDetails)
-* [ ] دالة تحويل موحدة `ToProblemDetails(this Result result)` لتحويل كائنات `Error` إلى ردود HTTP قياسية (`400`, `404`, `409`, `401`, `403`).
+* [x] دالة تحويل موحدة `ToProblemDetails(this Result result)` في `BuildingBlocks.Results` لتحويل كائنات `Error` إلى ردود HTTP دلالية قياسية (`400`, `404`, `409`, `401`, `403`).
 
-#### Task 3.3: التحقق والتأكد (Verification & Smoke Testing)
-* [ ] تسجيل فرع تجريبي واستعراضه.
+#### Task 3.3: ملفات التحقق والتجربة اللحظية (Developer Experience & Smoke Testing)
+* [x] إعداد وتحديث ملف [SuperMarket.Identity.API.http](file:///d:/dotnet/POS/src/Services/Identity/SuperMarket.Identity.API/SuperMarket.Identity.API.http) الشامل لاختبار جميع مسارات الفروع والأدوار والصلاحيات محلياً دون الحاجة لـ Postman.
 * [ ] تسجيل موظف كاشير وتسجيل دخوله بالـ PIN والحصول على JWT صالح من Keycloak.
 * [ ] فحص صحة الـ Soft Delete واستبعاد السجلات المحذوفة تلقائياً.
 

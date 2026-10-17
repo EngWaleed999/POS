@@ -1,12 +1,22 @@
 @HostAddress = http://localhost:5169
+@BranchId = 00000000-0000-0000-0000-000000000000
+@RoleId = 00000000-0000-0000-0000-000000000000
 
-### 1. List All Permission Groups (With Constituent Permissions Catalog)
+# ==============================================================================
+# 1. PERMISSION GROUPS & PERMISSIONS CATALOG
+# ==============================================================================
+
+### 1.1 List All Permission Groups (With Constituent Permissions)
 GET {{HostAddress}}/api/v1/permission-groups
 Accept: application/json
 
 ###
 
-### 2. Create a Dynamic System Role (e.g. Senior Cashier)
+# ==============================================================================
+# 2. DYNAMIC ROLES LIFECYCLE
+# ==============================================================================
+
+### 2.1 Create a Dynamic System Role (e.g. Senior Cashier)
 POST {{HostAddress}}/api/v1/roles
 Content-Type: application/json
 Accept: application/json
@@ -18,20 +28,19 @@ Accept: application/json
 
 ###
 
-### 3. List Dynamic Roles (Paginated with Search & Filters)
+### 2.2 List Dynamic Roles (Paginated with Search & Filters)
 GET {{HostAddress}}/api/v1/roles?page=1&pageSize=10&search=cashier&isActive=true
 Accept: application/json
 
 ###
 
-### 4. Get Role Details By ID (Replace with created role GUID)
-@RoleId = 00000000-0000-0000-0000-000000000000
+### 2.3 Get Role Details By ID
 GET {{HostAddress}}/api/v1/roles/{{RoleId}}
 Accept: application/json
 
 ###
 
-### 5. Synchronize Assigned Permission Groups (Full Sync - ADR-004 & ADR-005)
+### 2.4 Synchronize Assigned Permission Groups (Full Sync - ADR-004 & ADR-005)
 PUT {{HostAddress}}/api/v1/roles/{{RoleId}}/permission-groups
 Content-Type: application/json
 Accept: application/json
@@ -45,7 +54,7 @@ Accept: application/json
 
 ###
 
-### 6. Edge Case: Revoke All Permissions (Empty Array - Vacuous Truth Semantics)
+### 2.5 Edge Case: Revoke All Permissions (Empty Array - Vacuous Truth Semantics)
 PUT {{HostAddress}}/api/v1/roles/{{RoleId}}/permission-groups
 Content-Type: application/json
 Accept: application/json
@@ -56,7 +65,7 @@ Accept: application/json
 
 ###
 
-### 7. Edge Case: Validation Failure (Empty Role Name - RFC 7807 ProblemDetails)
+### 2.6 Edge Case: Validation Failure (Empty Role Name - RFC 7807 ProblemDetails)
 POST {{HostAddress}}/api/v1/roles
 Content-Type: application/json
 Accept: application/json
@@ -64,6 +73,112 @@ Accept: application/json
 {
   "roleName": "",
   "description": ""
+}
+
+###
+
+# ==============================================================================
+# 3. PHYSICAL RETAIL BRANCHES LIFECYCLE
+# ==============================================================================
+
+### 3.1 Create a New Supermarket Retail Branch
+POST {{HostAddress}}/api/v1/branches
+Content-Type: application/json
+Accept: application/json
+
+{
+  "code": "BR-01",
+  "name": "Main Hypermarket - Sanaa",
+  "street": "Hadda Street, Block 14",
+  "city": "Sanaa",
+  "region": "Capital Secretariat",
+  "postalCode": "12345",
+  "phone": "+9671234567",
+  "taxNumber": "TAX-987654321",
+  "email": "hadda.branch@supermarket.com",
+  "currency": "YER"
+}
+
+###
+
+### 3.2 List Branches (Paginated with Search & Active Status Filters)
+GET {{HostAddress}}/api/v1/branches?page=1&pageSize=10&search=Sanaa&isActive=true
+Accept: application/json
+
+###
+
+### 3.3 Get Branch Complete Operational Details By ID
+GET {{HostAddress}}/api/v1/branches/{{BranchId}}
+Accept: application/json
+
+###
+
+### 3.4 Update Branch Operational Details & Weekly Operating Hours
+PUT {{HostAddress}}/api/v1/branches/{{BranchId}}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "name": "Main Hypermarket - Sanaa (Renovated)",
+  "street": "Hadda Street, Tower Building 2",
+  "city": "Sanaa",
+  "region": "Capital Secretariat",
+  "postalCode": "12345",
+  "phone": "+9671234567",
+  "taxNumber": "TAX-987654321",
+  "email": "hadda.renovated@supermarket.com",
+  "operatingHours": [
+    {
+      "dayOfWeek": 0,
+      "openingTime": "08:00:00",
+      "closingTime": "23:00:00",
+      "isOvernight": false
+    },
+    {
+      "dayOfWeek": 4,
+      "openingTime": "08:00:00",
+      "closingTime": "02:00:00",
+      "isOvernight": true
+    }
+  ]
+}
+
+###
+
+### 3.5 Temporarily Deactivate Branch Operations (e.g. Maintenance)
+POST {{HostAddress}}/api/v1/branches/{{BranchId}}/deactivate
+Accept: application/json
+
+###
+
+### 3.6 Restore Branch Operational Status (Reactivate)
+POST {{HostAddress}}/api/v1/branches/{{BranchId}}/activate
+Accept: application/json
+
+###
+
+### 3.7 Soft-Delete Branch (Enterprise Preservation of Historical Ledger)
+DELETE {{HostAddress}}/api/v1/branches/{{BranchId}}
+Accept: application/json
+
+###
+
+### 3.8 Edge Case: Validation Failure (Invalid Phone Format & Empty Code)
+POST {{HostAddress}}/api/v1/branches
+Content-Type: application/json
+Accept: application/json
+
+{
+  "code": "",
+  "name": "Invalid Branch",
+  "street": "Short",
+  "city": "City",
+  "region": "Region",
+  "postalCode": null,
+  "phone": "invalid-phone",
+  "taxNumber": "",
+  "email": "not-an-email",
+  "currency": "YER"
 }
 
 ###
