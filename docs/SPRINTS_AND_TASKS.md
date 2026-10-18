@@ -126,11 +126,14 @@ flowchart LR
   * `CreateRoleCommand` & Validator & Handler.
   * `UpdateRolePermissionGroupsCommand` (Full State Synchronization وفق ADR-004 و ADR-005).
   * `GetRoleByIdQuery`, `ListRolesQuery`, `ListPermissionGroupsQuery`.
-* [ ] **`Staff Management Suite (المرحلة القادمة)`:**
-  * `RegisterStaffMemberCommand` & Handler: تسجيل موظف/كاشير وربطه بفرع ودور أولي.
-  * `TransferStaffBranchCommand` & Handler: نقل موظف لفرع جديد.
-  * `SetStaffPinCommand` & Handler: تعيين رمز الـ PIN المشفر بـ Argon2id.
-  * `GetStaffByIdQuery`, `ListStaffQuery`.
+* [x] **`Staff Management Suite (مكتملة ومربوطة بـ Keycloak)`:**
+  * `RegisterStaffCommand` & Validator & Handler (مع تعويض تلقائي Rollback عند فشل الحفظ).
+  * `SetStaffPinCommand` & Validator & Handler (تشفير آمن للـ PIN بـ PBKDF2 Constant-Time).
+  * `TransferStaffCommand` & Validator & Handler (نقل موظف لفرع آخر).
+  * `ChangeStaffRoleCommand` & Validator & Handler (تعديل الدور والمزامنة مع Keycloak).
+  * `ActivateStaffCommand` & `DeactivateStaffCommand` & Handlers (إلغاء التفعيل الفوري للجلسات).
+  * `GetStaffByIdQuery`, `ListStaffQuery` & Handlers (مبنية وفق `IDtoQuery` و `IPagedQuery` من BuildingBlocks).
+  * `UserCreatedEventHandler`, `UserTransferredEventHandler`, `UserDeactivatedEventHandler`.
 
 #### Task 2.2: المصادقة السريعة للكاشير (Fast Cashier Login via Keycloak)
 * [ ] **`LoginWithPinCommand`:** الكاشير يرسل كود الموظف والـ PIN ورقم الجهاز:
@@ -153,7 +156,7 @@ flowchart LR
 * [x] `/api/v1/branches`: إدارة الفروع وساعات العمل (7 Endpoints متكاملة في `BranchEndpoints.cs`).
 * [x] `/api/v1/roles`: إدارة الأدوار الديناميكية وتخصيص الصلاحيات (4 Endpoints في `RoleEndpoints.cs`).
 * [x] `/api/v1/permission-groups`: استعراض كتالوج باقات الصلاحيات (`PermissionGroupEndpoints.cs`).
-* [ ] `/api/v1/staff`: إدارة الموظفين، الأدوار، وتعيين الـ PIN.
+* [x] `/api/v1/staff`: إدارة الموظفين، الأدوار، وتعيين الـ PIN (8 Endpoints في `StaffEndpoints.cs`).
 * [ ] `/api/v1/auth/cashier-login`: تسجيل الدخول السريع لشاشات الـ POS.
 
 #### Task 3.2: معالجة الأخطاء الموحدة (RFC 7807 ProblemDetails)

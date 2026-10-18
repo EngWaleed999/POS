@@ -65,5 +65,6 @@ app.UseHttpsRedirection();
 app.MapBranchEndpoints();
 app.MapRoleEndpoints();
 app.MapPermissionGroupEndpoints();
+app.MapStaffEndpoints();
 
 app.Run();

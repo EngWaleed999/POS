@@ -50,6 +50,10 @@ public static class DependencyInjection
         services.AddScoped<IRoleRepository, RoleRepository>();
         services.AddScoped<IPermissionGroupRepository, PermissionGroupRepository>();
 
+        // Register Cryptography & Identity Provider Services
+        services.AddSingleton<SuperMarket.Identity.Application.Abstractions.Cryptography.IPinHasher, SuperMarket.Identity.Infrastructure.Cryptography.Pbkdf2PinHasher>();
+        services.AddScoped<SuperMarket.Identity.Application.Abstractions.Authentication.IIdentityProviderService, SuperMarket.Identity.Infrastructure.Authentication.DevKeycloakIdentityProviderService>();
+
         // Register Database Seeding
         services.AddScoped<IIdentityDataSeeder, SuperMarket.Identity.Infrastructure.Data.Seeding.IdentityDataSeeder>();
 

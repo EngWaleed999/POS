@@ -182,3 +182,95 @@ Accept: application/json
 }
 
 ###
+
+# =============================================================================
+# 4. STAFF MANAGEMENT ENDPOINTS (Minimal API & IAM Integration)
+# =============================================================================
+
+@StaffId = 00000000-0000-0000-0000-000000000000
+
+### 4.1 Register New Staff Member (Orchestrates IAM Provisioning & Domain User)
+POST {{HostAddress}}/api/v1/staff
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "cashier.ahmed",
+  "fullName": "Ahmed Mohamed Al-Sayed",
+  "phoneNumber": "+967771234567",
+  "email": "ahmed.cashier@supermarket.com",
+  "roleId": "{{RoleId}}",
+  "branchId": "{{BranchId}}",
+  "initialPassword": "SuperSecretPassword123!"
+}
+
+###
+
+### 4.2 List Paginated Staff Members (Filters by Branch, Role, Search Term)
+GET {{HostAddress}}/api/v1/staff?page=1&pageSize=10&search=Ahmed&isActive=true
+Accept: application/json
+
+###
+
+### 4.3 Get Staff Details by Identifier
+GET {{HostAddress}}/api/v1/staff/{{StaffId}}
+Accept: application/json
+
+###
+
+### 4.4 Set Cashier Fast-Login PIN (Secured via PBKDF2 Constant-Time Verification)
+PUT {{HostAddress}}/api/v1/staff/{{StaffId}}/pin
+Content-Type: application/json
+Accept: application/json
+
+{
+  "pin": "7942"
+}
+
+###
+
+### 4.5 Edge Case: Reject Insecure Sequential or Repeating PIN Codes
+PUT {{HostAddress}}/api/v1/staff/{{StaffId}}/pin
+Content-Type: application/json
+Accept: application/json
+
+{
+  "pin": "1234"
+}
+
+###
+
+### 4.6 Transfer Staff Member to Another Branch
+PUT {{HostAddress}}/api/v1/staff/{{StaffId}}/transfer
+Content-Type: application/json
+Accept: application/json
+
+{
+  "newBranchId": "{{BranchId}}"
+}
+
+###
+
+### 4.7 Change Staff Member Job Role (Syncs Role with Keycloak)
+PUT {{HostAddress}}/api/v1/staff/{{StaffId}}/role
+Content-Type: application/json
+Accept: application/json
+
+{
+  "newRoleId": "{{RoleId}}"
+}
+
+###
+
+### 4.8 Deactivate Staff Member Account (Invalidates Keycloak Sessions)
+POST {{HostAddress}}/api/v1/staff/{{StaffId}}/deactivate
+Accept: application/json
+
+###
+
+### 4.9 Reactivate Staff Member Account
+POST {{HostAddress}}/api/v1/staff/{{StaffId}}/activate
+Accept: application/json
+
+###
+

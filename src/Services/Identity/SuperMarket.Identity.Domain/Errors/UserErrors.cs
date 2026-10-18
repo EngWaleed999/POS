@@ -41,4 +41,28 @@ public static class UserErrors
 
     public static readonly Error AccountLockedOut =
         Error.Conflict("User.AccountLockedOut", "User account is temporarily locked out due to multiple consecutive failed authentication attempts.");
+
+    public static readonly Error NotFound =
+        Error.NotFound("User.NotFound", "The requested user was not found.");
+
+    public static readonly Error UsernameAlreadyExists =
+        Error.Conflict("User.UsernameAlreadyExists", "A user with the specified username already exists.");
+
+    public static readonly Error PhoneNumberAlreadyExists =
+        Error.Conflict("User.PhoneNumberAlreadyExists", "A user with the specified phone number already exists.");
+
+    public static readonly Error EmailAlreadyExists =
+        Error.Conflict("User.EmailAlreadyExists", "A user with the specified email address already exists.");
+
+    public static readonly Error RoleNotFound =
+        Error.NotFound("User.RoleNotFound", "The specified role was not found.");
+
+    public static readonly Error BranchNotFound =
+        Error.NotFound("User.BranchNotFound", "The specified branch was not found or is inactive.");
+
+    public static readonly Error InvalidPinFormat =
+        Error.Validation("User.InvalidPinFormat", "PIN must be between 4 and 6 numeric digits, and cannot be sequential or repeating.");
+
+    public static readonly Error IdentityProviderFailure =
+        Error.Failure("User.IdentityProviderFailure", "External Identity Provider operation failed.");
 }
