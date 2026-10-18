@@ -52,7 +52,15 @@ public static class DependencyInjection
 
         // Register Cryptography & Identity Provider Services
         services.AddSingleton<SuperMarket.Identity.Application.Abstractions.Cryptography.IPinHasher, SuperMarket.Identity.Infrastructure.Cryptography.Pbkdf2PinHasher>();
-        services.AddScoped<SuperMarket.Identity.Application.Abstractions.Authentication.IIdentityProviderService, SuperMarket.Identity.Infrastructure.Authentication.DevKeycloakIdentityProviderService>();
+
+        // Register In-Memory Caching & Keycloak Configuration
+        services.AddMemoryCache();
+        services.Configure<SuperMarket.Identity.Infrastructure.Authentication.KeycloakOptions>(
+            configuration.GetSection(SuperMarket.Identity.Infrastructure.Authentication.KeycloakOptions.SectionName));
+
+        // Register Keycloak REST Service via Typed HttpClient
+        services.AddHttpClient<SuperMarket.Identity.Application.Abstractions.Authentication.IIdentityProviderService, 
+            SuperMarket.Identity.Infrastructure.Authentication.KeycloakIdentityProviderService>();
 
         // Register Database Seeding
         services.AddScoped<IIdentityDataSeeder, SuperMarket.Identity.Infrastructure.Data.Seeding.IdentityDataSeeder>();

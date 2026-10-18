@@ -8,6 +8,12 @@ namespace SuperMarket.Identity.Infrastructure.Persistence.Repositories;
 internal sealed class UserRepository(IdentityDbContext dbContext)
     : Repository<User>(dbContext), IUserRepository
 {
+    public async Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
+    {
+        return await DbContext.Users
+            .FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
+    }
+
     public async Task<User?> GetByKeycloakUserIdAsync(string keycloakUserId, CancellationToken cancellationToken = default)
     {
         return await DbContext.Users

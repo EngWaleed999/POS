@@ -136,9 +136,10 @@ flowchart LR
   * `UserCreatedEventHandler`, `UserTransferredEventHandler`, `UserDeactivatedEventHandler`.
 
 #### Task 2.2: المصادقة السريعة للكاشير (Fast Cashier Login via Keycloak)
-* [ ] **`LoginWithPinCommand`:** الكاشير يرسل كود الموظف والـ PIN ورقم الجهاز:
-  * التحقق من سلامة الجهاز والـ PIN محلياً في `identity_db`.
-  * مخاطبة Keycloak برمجياً لإصدار `Access Token` معتمد للدور `Cashier`.
+* [x] **`LoginWithPinCommand`:** الكاشير يرسل كود الموظف والـ PIN ورقم الجهاز:
+  * التحقق من سلامة الجهاز وتطابق الفرع والـ PIN محلياً في `identity_db`.
+  * فرض قيود الإقفال الأمني (Lockout Enforcement) بعد المحاولات الفاشلة.
+  * توليد JWT Access Token موقع يحتوي على (CashierId, Role, BranchId, RegisterId, Permissions).
 
 #### Task 2.3: منظومة فحص الصلاحيات اللحظية (Authorization Handler & Cache)
 * [ ] **`HasPermissionAttribute`:** خاصية تزين الـ Endpoints مثل `[HasPermission("shifts:open:own")]`.
@@ -157,7 +158,7 @@ flowchart LR
 * [x] `/api/v1/roles`: إدارة الأدوار الديناميكية وتخصيص الصلاحيات (4 Endpoints في `RoleEndpoints.cs`).
 * [x] `/api/v1/permission-groups`: استعراض كتالوج باقات الصلاحيات (`PermissionGroupEndpoints.cs`).
 * [x] `/api/v1/staff`: إدارة الموظفين، الأدوار، وتعيين الـ PIN (8 Endpoints في `StaffEndpoints.cs`).
-* [ ] `/api/v1/auth/cashier-login`: تسجيل الدخول السريع لشاشات الـ POS.
+* [x] `/api/v1/auth/cashier-login`: تسجيل الدخول السريع لشاشات الـ POS (`AuthEndpoints.cs`).
 
 #### Task 3.2: معالجة الأخطاء الموحدة (RFC 7807 ProblemDetails)
 * [x] دالة تحويل موحدة `ToProblemDetails(this Result result)` في `BuildingBlocks.Results` لتحويل كائنات `Error` إلى ردود HTTP دلالية قياسية (`400`, `404`, `409`, `401`, `403`).

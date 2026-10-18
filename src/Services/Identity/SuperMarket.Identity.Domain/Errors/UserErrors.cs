@@ -65,4 +65,16 @@ public static class UserErrors
 
     public static readonly Error IdentityProviderFailure =
         Error.Failure("User.IdentityProviderFailure", "External Identity Provider operation failed.");
+
+    public static readonly Error InvalidCredentials =
+        Error.Validation("User.InvalidCredentials", "Invalid username or PIN code.");
+
+    public static readonly Error PinNotConfigured =
+        Error.Conflict("User.PinNotConfigured", "Cashier PIN has not been configured for this account.");
+
+    public static readonly Error RegisterNotFound =
+        Error.NotFound("User.RegisterNotFound", "The specified POS register was not found or is inactive.");
+
+    public static readonly Error BranchMismatch =
+        Error.Conflict("User.BranchMismatch", "Cashier does not belong to the branch of the assigned POS register.");
 }

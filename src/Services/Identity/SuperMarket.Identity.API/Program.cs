@@ -66,5 +66,6 @@ app.MapBranchEndpoints();
 app.MapRoleEndpoints();
 app.MapPermissionGroupEndpoints();
 app.MapStaffEndpoints();
+app.MapAuthEndpoints();
 
 app.Run();

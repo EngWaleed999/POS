@@ -274,3 +274,36 @@ Accept: application/json
 
 ###
 
+# =============================================================================
+# 5. CASHIER AUTHENTICATION (Fast PIN Login & POS Terminal Affinity)
+# =============================================================================
+
+@RegisterId = 00000000-0000-0000-0000-000000000000
+
+### 5.1 Cashier Fast-Login via PIN (Happy Path)
+POST {{HostAddress}}/api/v1/auth/cashier-login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "cashier.ahmed",
+  "pin": "7942",
+  "registerId": "{{RegisterId}}"
+}
+
+###
+
+### 5.2 Edge Case: Invalid PIN (Enforces Failed Login Counter)
+POST {{HostAddress}}/api/v1/auth/cashier-login
+Content-Type: application/json
+Accept: application/json
+
+{
+  "username": "cashier.ahmed",
+  "pin": "0000",
+  "registerId": "{{RegisterId}}"
+}
+
+###
+
+
