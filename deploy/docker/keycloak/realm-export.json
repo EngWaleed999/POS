@@ -1,0 +1,82 @@
+{
+  "id": "supermarket",
+  "realm": "supermarket",
+  "displayName": "SuperMarket POS Identity Realm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 86400,
+  "ssoSessionMaxLifespan": 604800,
+  "roles": {
+    "realm": [
+      {
+        "name": "System Admin",
+        "description": "Chief system administrator with full platform control and configuration authority."
+      },
+      {
+        "name": "Store Manager",
+        "description": "Branch executive overseeing staff, floor operations, inventory, and shift approvals."
+      },
+      {
+        "name": "Cashier",
+        "description": "Point of sale operator responsible for front-line transactions, shifts, and cash handling."
+      },
+      {
+        "name": "Inventory Manager",
+        "description": "Warehouse officer managing product catalogs, stock balances, stocktakes, and logistics."
+      },
+      {
+        "name": "Purchasing Manager",
+        "description": "Supply chain officer managing vendors, purchase orders, and inbound shipments."
+      },
+      {
+        "name": "Accountant",
+        "description": "Financial officer reviewing shift ledgers, fiscal compliance, supplier payments, and audit books."
+      }
+    ]
+  },
+  "groups": [],
+  "clients": [
+    {
+      "clientId": "pos-identity-api",
+      "name": "SuperMarket Identity API Service",
+      "description": "Confidential client for Identity Service backend communication and service-to-service auth",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "pos-identity-secret-key-999",
+      "bearerOnly": false,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    },
+    {
+      "clientId": "pos-terminal",
+      "name": "SuperMarket POS Cashier Terminal Client",
+      "description": "Public client for Cashier front-end application with PKCE support",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "*"
+      ],
+      "webOrigins": [
+        "*"
+      ]
+    }
+  ]
+}

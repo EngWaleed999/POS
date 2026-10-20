@@ -1,8 +1,11 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 using SuperMarket.BuildingBlocks.Infrastructure;
+using SuperMarket.Identity.Application.Abstractions.Authorization;
 using SuperMarket.Identity.Application.Abstractions.Persistence;
+using SuperMarket.Identity.Infrastructure.Caching;
 using SuperMarket.Identity.Infrastructure.Data;
 using SuperMarket.Identity.Infrastructure.Persistence.Repositories;
 
@@ -52,6 +55,20 @@ public static class DependencyInjection
 
         // Register Cryptography & Identity Provider Services
         services.AddSingleton<SuperMarket.Identity.Application.Abstractions.Cryptography.IPinHasher, SuperMarket.Identity.Infrastructure.Cryptography.Pbkdf2PinHasher>();
+
+        // Register Redis Connection Multiplexer (AbortOnConnectFail = false ensures app starts gracefully even if Redis is down)
+        var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
+        {
+            var options = ConfigurationOptions.Parse(redisConnectionString);
+            options.AbortOnConnectFail = false;
+            options.ConnectTimeout = 3000;
+            options.SyncTimeout = 3000;
+            return ConnectionMultiplexer.Connect(options);
+        });
+
+        // Register Permission Cache Service
+        services.AddScoped<IPermissionService, RedisPermissionService>();
 
         // Register In-Memory Caching & Keycloak Configuration
         services.AddMemoryCache();

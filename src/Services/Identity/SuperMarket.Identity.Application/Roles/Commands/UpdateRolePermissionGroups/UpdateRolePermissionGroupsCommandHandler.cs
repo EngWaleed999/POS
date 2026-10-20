@@ -1,5 +1,6 @@
 using SuperMarket.BuildingBlocks.Application;
 using SuperMarket.BuildingBlocks.Results;
+using SuperMarket.Identity.Application.Abstractions.Authorization;
 using SuperMarket.Identity.Application.Abstractions.Persistence;
 using SuperMarket.Identity.Domain.Entities;
 using SuperMarket.Identity.Domain.Errors;
@@ -13,10 +14,12 @@ namespace SuperMarket.Identity.Application.Roles.Commands.UpdateRolePermissionGr
 public sealed class UpdateRolePermissionGroupsCommandHandler(
     IRoleRepository roleRepository,
     IPermissionGroupRepository permissionGroupRepository,
+    IPermissionService permissionService,
     IUnitOfWork unitOfWork) : ICommandHandler<UpdateRolePermissionGroupsCommand>
 {
     private readonly IRoleRepository _roleRepository = roleRepository;
     private readonly IPermissionGroupRepository _permissionGroupRepository = permissionGroupRepository;
+    private readonly IPermissionService _permissionService = permissionService;
     private readonly IUnitOfWork _unitOfWork = unitOfWork;
 
     public async Task<Result> Handle(
@@ -86,6 +89,7 @@ public sealed class UpdateRolePermissionGroupsCommandHandler(
         if (linksToRemove.Count > 0 || groupIdsToAdd.Count > 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _permissionService.InvalidateRolePermissionsAsync(command.RoleId, cancellationToken);
         }
 
         return Result.Success();

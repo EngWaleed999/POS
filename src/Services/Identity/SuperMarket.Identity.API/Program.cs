@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using SuperMarket.Identity.API.Authorization;
 using SuperMarket.Identity.API.Endpoints;
 using SuperMarket.Identity.Application;
 using SuperMarket.Identity.Application.Abstractions.Persistence;
@@ -21,8 +23,13 @@ builder.Services.Configure<RouteOptions>(options =>
 // Register Identity Application (MediatR, Pipeline Behaviors, FluentValidation)
 builder.Services.AddIdentityApplication();
 
-// Register Identity Infrastructure (PostgreSQL, Repositories, DbContext, Seeder)
+// Register Identity Infrastructure (PostgreSQL, Repositories, DbContext, Seeder, Redis)
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
+
+// Register Dynamic Permission Authorization (Cache-Aside Redis)
+builder.Services.AddAuthorization();
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
+builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
 // OpenAPI & Scalar Documentation
 builder.Services.AddOpenApi();
@@ -58,6 +65,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 // -----------------------------------------------------------------------------
 // 3. Endpoint Mappings (Minimal API Vertical Slices)
