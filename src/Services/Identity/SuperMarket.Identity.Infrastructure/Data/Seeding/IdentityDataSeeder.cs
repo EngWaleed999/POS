@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SuperMarket.Identity.Application.Abstractions.Authentication;
 using SuperMarket.Identity.Application.Abstractions.Persistence;
 using SuperMarket.Identity.Domain.Entities;
 
@@ -13,13 +14,16 @@ namespace SuperMarket.Identity.Infrastructure.Data.Seeding;
 public sealed class IdentityDataSeeder : IIdentityDataSeeder
 {
     private readonly IdentityDbContext _dbContext;
+    private readonly IIdentityProviderService _identityProviderService;
     private readonly ILogger<IdentityDataSeeder> _logger;
 
     public IdentityDataSeeder(
         IdentityDbContext dbContext,
+        IIdentityProviderService identityProviderService,
         ILogger<IdentityDataSeeder> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _identityProviderService = identityProviderService ?? throw new ArgumentNullException(nameof(identityProviderService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -252,6 +256,87 @@ public sealed class IdentityDataSeeder : IIdentityDataSeeder
                 else
                 {
                     _logger.LogInformation("All role-permission-group items already linked. Skipped.");
+                }
+
+                // -----------------------------------------------------------------
+                // 6. Seed Default SystemAdmin User (Linked to Keycloak)
+                // -----------------------------------------------------------------
+                if (roleLookup.TryGetValue("System Admin", out var adminRoleId))
+                {
+                    var existingAdmin = await _dbContext.Users
+                        .IgnoreQueryFilters()
+                        .FirstOrDefaultAsync(u => u.Username == "admin", ct);
+
+                    if (existingAdmin is null)
+                    {
+                        string keycloakUserId;
+                        try
+                        {
+                            var idpCreateResult = await _identityProviderService.CreateUserAsync(
+                                username: "admin",
+                                email: "admin@supermarket.pos",
+                                phoneNumber: "+967770000000",
+                                fullName: "System Administrator",
+                                initialPassword: "admin123",
+                                cancellationToken: ct);
+
+                            if (idpCreateResult.IsSuccess)
+                            {
+                                keycloakUserId = idpCreateResult.Value;
+                                _logger.LogInformation("Keycloak user 'admin' created with ID {UserId}", keycloakUserId);
+                            }
+                            else
+                            {
+                                var getExistingResult = await _identityProviderService.GetUserIdByUsernameAsync("admin", ct);
+                                if (getExistingResult.IsSuccess)
+                                {
+                                    keycloakUserId = getExistingResult.Value;
+                                    _logger.LogInformation("Found existing Keycloak user 'admin' with ID {UserId}", keycloakUserId);
+                                }
+                                else
+                                {
+                                    keycloakUserId = Guid.NewGuid().ToString();
+                                    _logger.LogWarning("Keycloak user creation returned failure ({Error}). Using fallback ID.", idpCreateResult.Error.Description);
+                                }
+                            }
+
+                            // Assign System Admin role in Keycloak
+                            var roleAssignResult = await _identityProviderService.AssignRoleAsync(keycloakUserId, "System Admin", ct);
+                            if (roleAssignResult.IsFailure)
+                            {
+                                _logger.LogWarning("Could not assign 'System Admin' role in Keycloak: {Error}", roleAssignResult.Error.Description);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            keycloakUserId = Guid.NewGuid().ToString();
+                            _logger.LogWarning(ex, "Keycloak service unavailable during seeding. Default admin seeded with fallback ID.");
+                        }
+
+                        var adminUserResult = User.Create(
+                            username: "admin",
+                            phoneNumber: "+967770000000",
+                            keycloakUserId: keycloakUserId,
+                            fullName: "System Administrator",
+                            roleId: adminRoleId,
+                            email: "admin@supermarket.pos",
+                            branchId: null);
+
+                        if (adminUserResult.IsSuccess)
+                        {
+                            _dbContext.Users.Add(adminUserResult.Value);
+                            await _dbContext.SaveChangesAsync(ct);
+                            _logger.LogInformation("Seeded baseline SystemAdmin user (admin / admin123).");
+                        }
+                        else
+                        {
+                            _logger.LogError("Failed to instantiate SystemAdmin user entity: {Error}", adminUserResult.Error.Description);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogInformation("SystemAdmin user already exists. Skipped.");
+                    }
                 }
 
                 // Commit atomic transaction

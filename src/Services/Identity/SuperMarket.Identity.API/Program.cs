@@ -1,6 +1,12 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Scalar.AspNetCore;
+using Serilog;
 using SuperMarket.Identity.API.Authorization;
 using SuperMarket.Identity.API.Endpoints;
 using SuperMarket.Identity.Application;
@@ -9,6 +15,28 @@ using SuperMarket.Identity.Infrastructure;
 using SuperMarket.Identity.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// -----------------------------------------------------------------------------
+// Structured Logging (Serilog: Console for Cloud/Production, Rolling File for Dev)
+// -----------------------------------------------------------------------------
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "SuperMarket.Identity.API")
+        .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {NewLine}{Exception}");
+
+    // Local Development: Write rolling daily log files inside logs/ folder (Git-ignored)
+    if (context.HostingEnvironment.IsDevelopment())
+    {
+        configuration.WriteTo.File(
+            path: "logs/identity-.log",
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 7,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}");
+    }
+});
 
 // -----------------------------------------------------------------------------
 // 1. Service Registrations (Dependency Injection)
@@ -26,10 +54,63 @@ builder.Services.AddIdentityApplication();
 // Register Identity Infrastructure (PostgreSQL, Repositories, DbContext, Seeder, Redis)
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
 
+// Register Keycloak JWT Bearer Authentication (ADR-004: In-Memory JWKS Caching)
+var keycloakBaseUrl = builder.Configuration["Keycloak:BaseUrl"] ?? "http://localhost:8080";
+var keycloakRealm = builder.Configuration["Keycloak:Realm"] ?? "supermarket";
+var authority = $"{keycloakBaseUrl.TrimEnd('/')}/realms/{keycloakRealm}";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.Authority = authority;
+    options.RequireHttpsMetadata = false; // Dev/Docker compatibility; enforce true in production with public SSL
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = authority,
+        ValidateAudience = false,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromSeconds(30),
+        NameClaimType = "preferred_username",
+        RoleClaimType = "roles"
+    };
+});
+
 // Register Dynamic Permission Authorization (Cache-Aside Redis)
 builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
+// OpenTelemetry Observability (Tracing to Jaeger OTLP, Metrics to Prometheus)
+var otlpEndpoint = builder.Configuration["OpenTelemetry:OtlpEndpoint"] ?? "http://localhost:4317";
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("SuperMarket.Identity.API"))
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddAspNetCoreInstrumentation(options =>
+            {
+                options.RecordException = true;
+            })
+            .AddHttpClientInstrumentation()
+            .AddSource("SuperMarket.POS.Core")
+            .AddOtlpExporter(options =>
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            });
+    })
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddHttpClientInstrumentation()
+            .AddMeter("SuperMarket.POS.Core")
+            .AddPrometheusExporter();
+    });
 
 // OpenAPI & Scalar Documentation
 builder.Services.AddOpenApi();
@@ -66,6 +147,25 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Serilog HTTP Request Logging (Standardized, structured HTTP metrics)
+app.UseSerilogRequestLogging();
+
+// Expose W3C TraceId in HTTP response headers for developer visibility and client correlation
+app.Use(async (context, next) =>
+{
+    context.Response.OnStarting(() =>
+    {
+        var traceId = System.Diagnostics.Activity.Current?.TraceId.ToString();
+        if (!string.IsNullOrEmpty(traceId))
+        {
+            context.Response.Headers.TryAdd("X-Trace-Id", traceId);
+        }
+        return Task.CompletedTask;
+    });
+
+    await next();
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -77,5 +177,8 @@ app.MapRoleEndpoints();
 app.MapPermissionGroupEndpoints();
 app.MapStaffEndpoints();
 app.MapAuthEndpoints();
+
+// Observability Metrics Endpoint for Prometheus scraping
+app.MapPrometheusScrapingEndpoint();
 
 app.Run();

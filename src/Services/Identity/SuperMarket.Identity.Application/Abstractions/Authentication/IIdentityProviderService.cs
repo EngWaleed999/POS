@@ -31,4 +31,8 @@ public interface IIdentityProviderService
     Task<Result<string>> GenerateUserTokenAsync(
         string keycloakUserId,
         CancellationToken cancellationToken = default);
+
+    Task<Result<string>> GetUserIdByUsernameAsync(
+        string username,
+        CancellationToken cancellationToken = default);
 }

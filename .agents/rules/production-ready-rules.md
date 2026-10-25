@@ -10,12 +10,15 @@ Every component, layer, service, configuration, and test must follow this protoc
 - ALWAYS isolate secrets in local `.env` files protected by `.gitignore`.
 - ALWAYS provide clean `.env.example` templates with empty/placeholder values for team onboarding.
 - Local developer overrides must use .NET Secret Manager (`dotnet user-secrets`) or environment variables.
+- In production, secrets must be injected via secure Cloud Key Vaults (Azure Key Vault, AWS Secrets Manager, Kubernetes Secrets) or Environment Variables.
+- **Teaching Obligation:** Every time a secret or configuration is introduced, the AI must explicitly teach the developer: where the secret belongs, why putting it in code is a critical vulnerability, how to inject it securely, and how it is read via `IConfiguration` in production.
 
 ---
 
-## 2. No "Toy Code" or Shortcuts
+## 2. No "Toy Code", No Blind Copy-Paste (Pedagogical Mentorship Mandate)
 - Never write "temporary" implementations, sloppy placeholders, or naive mocks intended to be "fixed later".
 - Every class, method, and configuration must adhere to SOLID, Clean Architecture, and Clean Code principles from day one.
+- **NOT just copy-paste:** The AI is strictly forbidden from just dumping raw code without teaching. It must explain the internal workings, the architectural rationale, the failure modes, and the trade-offs, making the developer capable of thinking like a Staff/Senior Backend Engineer.
 - Code must be written to pass senior architectural review on the first attempt.
 
 ---

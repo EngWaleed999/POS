@@ -357,6 +357,53 @@ public sealed class KeycloakIdentityProviderService : IIdentityProviderService
         }
     }
 
+    public async Task<Result<string>> GetUserIdByUsernameAsync(
+        string username,
+        CancellationToken cancellationToken = default)
+    {
+        var tokenResult = await GetAdminAccessTokenAsync(cancellationToken);
+        if (tokenResult.IsFailure)
+        {
+            return Result.Failure<string>(tokenResult.Error);
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"admin/realms/{_options.Realm}/users?username={Uri.EscapeDataString(username.Trim())}&exact=true");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return Result.Failure<string>(UserErrors.NotFound);
+            }
+
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(content);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("id", out var idProp))
+                {
+                    var id = idProp.GetString();
+                    if (!string.IsNullOrWhiteSpace(id))
+                    {
+                        return Result.Success(id);
+                    }
+                }
+            }
+
+            return Result.Failure<string>(UserErrors.NotFound);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to query Keycloak user by username {Username}", username);
+            return Result.Failure<string>(UserErrors.IdentityProviderFailure);
+        }
+    }
+
     private static (string FirstName, string LastName) SplitFullName(string fullName)
     {
         var trimmed = fullName.Trim();
