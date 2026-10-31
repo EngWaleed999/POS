@@ -1,0 +1,45 @@
+# =============================================================================
+# Grafana Loki Configuration — Hawkeye Observability Stack
+# =============================================================================
+# Loki is the centralized log aggregation engine for all POS microservices.
+# Receives structured logs from OpenTelemetry Collector via Native OTLP.
+# Logs are queryable through Grafana using LogQL language.
+# =============================================================================
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-04-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+# CRITICAL: allow_structured_metadata MUST be true for Loki 3.x to accept
+# OTLP logs with OpenTelemetry attributes (trace_id, span_id, service.name).
+# Without this, Loki will reject OTLP log records containing metadata fields.
+limits_config:
+  allow_structured_metadata: true
+  retention_period: 168h  # 7 days log retention
+
+compactor:
+  working_directory: /loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem

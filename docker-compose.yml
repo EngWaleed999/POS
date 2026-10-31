@@ -37,7 +37,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.2
     container_name: pos-keycloak
-    command: start-dev --import-realm
+    command: start-dev --import-realm --features=token-exchange:v1
     restart: unless-stopped
     environment:
       KC_DB: postgres
@@ -137,7 +137,8 @@ services:
 
   # ---------------------------------------------------------------------------
   # 6. Jaeger (Distributed Tracing Backend & Web UI)
-  # Receives OpenTelemetry OTLP traces across POS microservices.
+  # Receives distributed traces from OpenTelemetry Collector via internal OTLP.
+  # Web UI available on port 16686 for trace search and visualization.
   # ---------------------------------------------------------------------------
   jaeger:
     image: jaegertracing/all-in-one:1.76.0
@@ -145,26 +146,73 @@ services:
     restart: unless-stopped
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+      - JAEGER_UI_CONFIG={"theme":"dark"}
     ports:
-      - "${JAEGER_UI_PORT}:16686" # Jaeger Web UI
-      - "4317:4317" # OTLP gRPC receiver
-      - "4318:4318" # OTLP HTTP receiver
+      - "${JAEGER_UI_PORT}:16686" # Jaeger Web UI (Traces search & visualization)
+      # OTLP ports (4317/4318) are NOT exposed on host — owned exclusively by otel-collector
     networks:
       - pos-net
 
   # ---------------------------------------------------------------------------
-  # 7. Prometheus (Metrics Server)
-  # Scrapes and stores metrics from ASP.NET Core apps and infrastructure.
+  # 7. OpenTelemetry Collector (Central Telemetry Gateway)
+  # Receives all traces, metrics, and logs from .NET microservices via OTLP.
+  # Routes: Traces → Jaeger | Metrics → Prometheus (scrape) | Logs → Loki.
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: pos-otel-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/docker/otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC — .NET apps send all telemetry here
+      - "4318:4318"   # OTLP HTTP — alternative OTLP endpoint
+      - "13133:13133" # Collector health check endpoint
+    depends_on:
+      - jaeger
+      - loki
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------------------------------
+  # 8. Grafana Loki (Centralized Log Aggregation Engine)
+  # Stores structured logs received via Native OTLP from OpenTelemetry Collector.
+  # Queryable through Grafana using LogQL language.
+  # ---------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:latest
+    container_name: pos-loki
+    command: ["-config.file=/etc/loki/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ./deploy/docker/loki/config.yaml:/etc/loki/config.yaml:ro
+      - pos_loki_data:/loki
+    ports:
+      - "3100:3100" # Loki HTTP API & Native OTLP ingestion endpoint
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------------------------------
+  # 9. Prometheus (Metrics Server)
+  # Scrapes and stores metrics from OpenTelemetry Collector's Prometheus exporter.
   # ---------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:latest
     container_name: pos-prometheus
     restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
     ports:
       - "${PROMETHEUS_PORT}:9090" # Prometheus Web UI
     volumes:
       - ./deploy/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - pos_prometheus_data:/prometheus
+    depends_on:
+      - otel-collector
     networks:
       - pos-net
 
@@ -210,9 +258,9 @@ services:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
-  # 10. Grafana (Observability Dashboard & Telemetry Visualization)
-  # Visualizes Prometheus metrics and Jaeger distributed traces.
-  # Web Dashboard available on port 3000.
+  # 11. Grafana (Unified Observability Dashboard — Single Pane of Glass)
+  # Visualizes Prometheus metrics, Jaeger traces, and Loki logs in one UI.
+  # Datasources auto-provisioned via Configuration-as-Code (no manual setup).
   # ---------------------------------------------------------------------------
   grafana:
     image: grafana/grafana:latest
@@ -224,11 +272,14 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/json/pos-overview.json
     volumes:
       - pos_grafana_data:/var/lib/grafana
+      - ./deploy/docker/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
       - jaeger
+      - loki
     networks:
       - pos-net
 
@@ -248,6 +299,8 @@ volumes:
     name: pos_prometheus_data
   pos_grafana_data:
     name: pos_grafana_data
+  pos_loki_data:
+    name: pos_loki_data
 
 # =============================================================================
 # Network Definition

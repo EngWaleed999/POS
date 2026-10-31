@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -36,7 +37,7 @@ builder.Host.UseSerilog((context, services, configuration) =>
             retainedFileCountLimit: 7,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{TraceId}] {Message:lj}{NewLine}{Exception}");
     }
-});
+}, writeToProviders: true);
 
 // -----------------------------------------------------------------------------
 // 1. Service Registrations (Dependency Injection)
@@ -85,10 +86,11 @@ builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
-// OpenTelemetry Observability (Tracing to Jaeger OTLP, Metrics to Prometheus)
+// OpenTelemetry Observability (Traces -> Jaeger, Metrics -> Prometheus via OTel Collector, Logs -> Loki via OTel Collector)
 var otlpEndpoint = builder.Configuration["OpenTelemetry:OtlpEndpoint"] ?? "http://localhost:4317";
 builder.Services.AddOpenTelemetry()
-    .ConfigureResource(resource => resource.AddService("SuperMarket.Identity.API"))
+    .ConfigureResource(resource => resource
+        .AddService(serviceName: "SuperMarket.Identity.API", serviceVersion: "1.0.0"))
     .WithTracing(tracing =>
     {
         tracing
@@ -97,6 +99,13 @@ builder.Services.AddOpenTelemetry()
                 options.RecordException = true;
             })
             .AddHttpClientInstrumentation()
+            .AddEntityFrameworkCoreInstrumentation(options =>
+            {
+                options.SetDbStatementForText = true;
+            })
+            .AddSource("Npgsql")
+            .AddSource("SuperMarket.Identity.Redis")
+            .AddSource("OpenTelemetry.Instrumentation.StackExchangeRedis")
             .AddSource("SuperMarket.POS.Core")
             .AddOtlpExporter(options =>
             {
@@ -109,7 +118,20 @@ builder.Services.AddOpenTelemetry()
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddMeter("SuperMarket.POS.Core")
-            .AddPrometheusExporter();
+            .AddMeter("Microsoft.AspNetCore.Hosting")
+            .AddMeter("Microsoft.AspNetCore.Server.Kestrel")
+            .AddMeter("System.Net.Http")
+            .AddOtlpExporter(options =>
+            {
+                options.Endpoint = new Uri(otlpEndpoint);
+            });
+    })
+    .WithLogging(logging =>
+    {
+        logging.AddOtlpExporter(options =>
+        {
+            options.Endpoint = new Uri(otlpEndpoint);
+        });
     });
 
 // OpenAPI & Scalar Documentation
@@ -177,8 +199,5 @@ app.MapRoleEndpoints();
 app.MapPermissionGroupEndpoints();
 app.MapStaffEndpoints();
 app.MapAuthEndpoints();
-
-// Observability Metrics Endpoint for Prometheus scraping
-app.MapPrometheusScrapingEndpoint();
 
 app.Run();

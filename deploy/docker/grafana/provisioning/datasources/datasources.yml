@@ -1,0 +1,67 @@
+apiVersion: 1
+
+# =============================================================================
+# Grafana Datasource Auto-Provisioning — Hawkeye Observability Stack
+# =============================================================================
+# These datasources are automatically configured when Grafana starts.
+# No manual setup required (Configuration-as-Code principle).
+# =============================================================================
+
+datasources:
+  # ---------------------------------------------------------------------------
+  # 1. Prometheus — Metrics Engine (Default Datasource)
+  # Stores all application and infrastructure metrics scraped from OTel Collector.
+  # Query language: PromQL
+  # ---------------------------------------------------------------------------
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  # ---------------------------------------------------------------------------
+  # 2. Loki — Centralized Log Aggregation
+  # Stores structured logs from all .NET microservices via OTLP.
+  # Query language: LogQL
+  # derivedFields: Creates clickable badge in Loki logs to jump directly into Jaeger Trace
+  # ---------------------------------------------------------------------------
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      derivedFields:
+        - datasourceUid: jaeger
+          matcherRegex: "(?:trace_id|TraceId|traceID)[\"':=\\s\\[]*([0-9a-f]{32})"
+          name: TraceID
+          url: "$${__value.raw}"
+          urlDisplayLabel: "View in Jaeger"
+
+  # ---------------------------------------------------------------------------
+  # 3. Jaeger — Distributed Tracing Backend
+  # Stores distributed traces from all .NET microservices via OTel Collector.
+  # tracesToLogsV2: Clicking any span in Jaeger auto-queries related logs in Loki
+  # Uses LogQL line-filter ($${__tags} |=\"$${__span.traceId}\") with 5m buffer
+  # ---------------------------------------------------------------------------
+  - name: Jaeger
+    uid: jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: true
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        tags:
+          - key: 'service.name'
+            value: 'service_name'
+        filterByTraceID: false
+        filterBySpanID: false
+        customQuery: true
+        query: '{$${__tags}} |="$${__span.traceId}"'

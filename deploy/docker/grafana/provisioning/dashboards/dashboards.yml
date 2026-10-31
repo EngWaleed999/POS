@@ -1,0 +1,21 @@
+apiVersion: 1
+
+# =============================================================================
+# Grafana Dashboard Auto-Provisioning — Hawkeye Observability Stack
+# =============================================================================
+# Automatically loads pre-built dashboard JSON definitions on startup.
+# Enforces Configuration-as-Code: Zero manual setup in the UI.
+# =============================================================================
+
+providers:
+  - name: 'SuperMarket POS Dashboards'
+    orgId: 1
+    folder: 'SuperMarket POS'
+    folderUid: 'pos-folder'
+    type: file
+    disableDeletion: true
+    editable: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

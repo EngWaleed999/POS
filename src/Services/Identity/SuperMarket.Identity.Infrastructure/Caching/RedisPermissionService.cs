@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -12,6 +13,7 @@ namespace SuperMarket.Identity.Infrastructure.Caching;
 /// </summary>
 public sealed class RedisPermissionService : IPermissionService
 {
+    public static readonly ActivitySource ActivitySource = new("SuperMarket.Identity.Redis", "1.0.0");
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(30);
     private const string KeyPrefix = "pos:perm:usr:";
 
@@ -46,15 +48,25 @@ public sealed class RedisPermissionService : IPermissionService
         // 1. Check Redis Cache (Hit Path)
         if (db is not null)
         {
+            using var activity = ActivitySource.StartActivity("redis.has_permission");
+            activity?.SetTag("db.system", "redis");
+            activity?.SetTag("db.operation", "SetContains");
+            activity?.SetTag("db.redis.key", cacheKey);
+
             try
             {
                 if (await db.KeyExistsAsync(cacheKey))
                 {
-                    return await db.SetContainsAsync(cacheKey, normalizedPermission);
+                    var hasPerm = await db.SetContainsAsync(cacheKey, normalizedPermission);
+                    activity?.SetTag("pos.cache.hit", true);
+                    return hasPerm;
                 }
+
+                activity?.SetTag("pos.cache.hit", false);
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _logger.LogWarning(ex, "Redis error while reading cache key {Key}. Falling back to database.", cacheKey);
             }
         }
@@ -65,6 +77,11 @@ public sealed class RedisPermissionService : IPermissionService
         // 3. Populate Redis Cache
         if (db is not null && permissions.Count > 0)
         {
+            using var writeActivity = ActivitySource.StartActivity("redis.populate_cache");
+            writeActivity?.SetTag("db.system", "redis");
+            writeActivity?.SetTag("db.operation", "SetAdd");
+            writeActivity?.SetTag("db.redis.key", cacheKey);
+
             try
             {
                 var redisValues = permissions.Select(p => (RedisValue)p).ToArray();
@@ -75,6 +92,7 @@ public sealed class RedisPermissionService : IPermissionService
             }
             catch (Exception ex)
             {
+                writeActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _logger.LogWarning(ex, "Failed to write permissions to Redis key {Key}.", cacheKey);
             }
         }
@@ -97,16 +115,25 @@ public sealed class RedisPermissionService : IPermissionService
         // 1. Check Redis Cache
         if (db is not null)
         {
+            using var activity = ActivitySource.StartActivity("redis.get_permissions");
+            activity?.SetTag("db.system", "redis");
+            activity?.SetTag("db.operation", "SetMembers");
+            activity?.SetTag("db.redis.key", cacheKey);
+
             try
             {
                 if (await db.KeyExistsAsync(cacheKey))
                 {
                     var members = await db.SetMembersAsync(cacheKey);
+                    activity?.SetTag("pos.cache.hit", true);
                     return members.Select(m => m.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 }
+
+                activity?.SetTag("pos.cache.hit", false);
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _logger.LogWarning(ex, "Redis error while reading cache key {Key}. Falling back to database.", cacheKey);
             }
         }
@@ -117,6 +144,11 @@ public sealed class RedisPermissionService : IPermissionService
         // 3. Populate Redis Cache
         if (db is not null && permissions.Count > 0)
         {
+            using var writeActivity = ActivitySource.StartActivity("redis.populate_cache");
+            writeActivity?.SetTag("db.system", "redis");
+            writeActivity?.SetTag("db.operation", "SetAdd");
+            writeActivity?.SetTag("db.redis.key", cacheKey);
+
             try
             {
                 var redisValues = permissions.Select(p => (RedisValue)p).ToArray();
@@ -127,6 +159,7 @@ public sealed class RedisPermissionService : IPermissionService
             }
             catch (Exception ex)
             {
+                writeActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 _logger.LogWarning(ex, "Failed to write permissions to Redis key {Key}.", cacheKey);
             }
         }
@@ -142,6 +175,11 @@ public sealed class RedisPermissionService : IPermissionService
         if (db is null) return;
 
         var cacheKey = GetCacheKey(userId);
+        using var activity = ActivitySource.StartActivity("redis.invalidate_user");
+        activity?.SetTag("db.system", "redis");
+        activity?.SetTag("db.operation", "KeyDelete");
+        activity?.SetTag("db.redis.key", cacheKey);
+
         try
         {
             await db.KeyDeleteAsync(cacheKey);
@@ -149,6 +187,7 @@ public sealed class RedisPermissionService : IPermissionService
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger.LogWarning(ex, "Failed to invalidate Redis cache key {Key}", cacheKey);
         }
     }
@@ -159,6 +198,11 @@ public sealed class RedisPermissionService : IPermissionService
     {
         var db = GetDatabase();
         if (db is null) return;
+
+        using var activity = ActivitySource.StartActivity("redis.invalidate_role");
+        activity?.SetTag("db.system", "redis");
+        activity?.SetTag("db.operation", "KeyDeleteBatch");
+        activity?.SetTag("db.redis.role_id", roleId.ToString());
 
         try
         {
@@ -178,6 +222,7 @@ public sealed class RedisPermissionService : IPermissionService
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             _logger.LogWarning(ex, "Failed to invalidate role permissions for role {RoleId}", roleId);
         }
     }

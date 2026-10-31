@@ -1,0 +1,80 @@
+# =============================================================================
+# OpenTelemetry Collector Configuration — Hawkeye Observability Stack
+# =============================================================================
+# This is the central telemetry gateway for all SuperMarket POS microservices.
+# .NET apps send Traces, Metrics, and Logs here via OTLP (port 4317/4318).
+# The Collector processes, batches, and routes telemetry to backend storage:
+#   Traces  → Jaeger  (OTLP gRPC on jaeger:4317)
+#   Metrics → Prometheus (Pull-based scrape on port 9464)
+#   Logs    → Loki    (Native OTLP HTTP on loki:3100/otlp)
+# =============================================================================
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # Memory Limiter: Prevents the Collector from consuming all available RAM
+  # under high-throughput bursts. Drops data gracefully when limit is reached.
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+
+  # Batch Processor: Buffers telemetry data and sends in efficient batches
+  # to reduce network calls and improve exporter throughput.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  # 1. Prometheus Metrics Exporter
+  # Exposes an HTTP endpoint on port 9464 for Prometheus to scrape.
+  # resource_to_telemetry_conversion converts OTel resource attributes
+  # (e.g., service.name) into Prometheus metric labels for filtering.
+  prometheus:
+    endpoint: 0.0.0.0:9464
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # 2. Jaeger Traces Exporter (via OTLP gRPC — modern standard)
+  # Sends traces to Jaeger's native OTLP receiver on internal port 4317.
+  # Uses insecure TLS since both services are on the same Docker network.
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # 3. Loki Logs Exporter (Native OTLP HTTP Ingestion)
+  # Sends logs to Loki's /otlp endpoint using the modern OTLP HTTP protocol.
+  # This replaces the deprecated Loki Exporter removed from Collector Contrib.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki]
