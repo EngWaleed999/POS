@@ -27,6 +27,7 @@ public static class AuthEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .AllowAnonymous()
         .WithName("CashierLogin")
         .WithSummary("Authenticates a cashier at a specific POS terminal using PIN credentials.")
         .Produces<CashierLoginResponse>(StatusCodes.Status200OK)

@@ -59,6 +59,9 @@ builder.Services.AddIdentityInfrastructure(builder.Configuration);
 var keycloakBaseUrl = builder.Configuration["Keycloak:BaseUrl"] ?? "http://localhost:8080";
 var keycloakRealm = builder.Configuration["Keycloak:Realm"] ?? "supermarket";
 var authority = $"{keycloakBaseUrl.TrimEnd('/')}/realms/{keycloakRealm}";
+var validAudience = builder.Configuration["Keycloak:Audience"] ?? "pos-api";
+var requireHttpsMetadata = builder.Configuration.GetValue<bool?>("Keycloak:RequireHttpsMetadata")
+    ?? !builder.Environment.IsDevelopment();
 
 builder.Services.AddAuthentication(options =>
 {
@@ -68,12 +71,13 @@ builder.Services.AddAuthentication(options =>
 .AddJwtBearer(options =>
 {
     options.Authority = authority;
-    options.RequireHttpsMetadata = false; // Dev/Docker compatibility; enforce true in production with public SSL
+    options.RequireHttpsMetadata = requireHttpsMetadata;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
         ValidIssuer = authority,
-        ValidateAudience = false,
+        ValidateAudience = true,
+        ValidAudience = validAudience,
         ValidateLifetime = true,
         ClockSkew = TimeSpan.FromSeconds(30),
         NameClaimType = "preferred_username",
@@ -82,7 +86,13 @@ builder.Services.AddAuthentication(options =>
 });
 
 // Register Dynamic Permission Authorization (Cache-Aside Redis)
-builder.Services.AddAuthorization();
+// Enforces a strict fallback policy: Every endpoint requires authentication unless explicitly marked AllowAnonymous
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionAuthorizationPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
@@ -144,7 +154,7 @@ var app = builder.Build();
 // -----------------------------------------------------------------------------
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference(options =>
     {
         options.Title = "SuperMarket Identity API";

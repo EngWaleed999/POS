@@ -3,7 +3,9 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using SuperMarket.BuildingBlocks.Results;
+using SuperMarket.Identity.API.Authorization;
 using SuperMarket.Identity.Application.Permissions.Queries.ListPermissionGroups;
+using SuperMarket.Identity.Domain.Constants;
 
 namespace SuperMarket.Identity.API.Endpoints;
 
@@ -15,7 +17,8 @@ public static class PermissionGroupEndpoints
     public static IEndpointRouteBuilder MapPermissionGroupEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/permission-groups")
-            .WithTags("Permission Groups");
+            .WithTags("Permission Groups")
+            .RequireAuthorization();
 
         // 1. List All Permission Groups with Constituent Permissions
         group.MapGet("/", async (ISender sender, CancellationToken cancellationToken) =>
@@ -27,6 +30,7 @@ public static class PermissionGroupEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.PermissionGroups.Read)
         .WithName("ListPermissionGroups")
         .WithSummary("Retrieves all packaged permission groups with their atomic constituent permissions.")
         .Produces<IReadOnlyList<PermissionGroupSummaryResponse>>(StatusCodes.Status200OK);
@@ -34,3 +38,4 @@ public static class PermissionGroupEndpoints
         return app;
     }
 }
+

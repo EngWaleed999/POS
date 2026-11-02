@@ -60,6 +60,19 @@
       ],
       "webOrigins": [
         "*"
+      ],
+      "protocolMappers": [
+        {
+          "name": "pos-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "pos-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
       ]
     },
     {
@@ -76,6 +89,19 @@
       ],
       "webOrigins": [
         "*"
+      ],
+      "protocolMappers": [
+        {
+          "name": "pos-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "pos-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
       ]
     }
   ]

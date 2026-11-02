@@ -1,9 +1,9 @@
 // Minimal API endpoints for supermarket branch lifecycle management.
 
 using MediatR;
-
 using SuperMarket.BuildingBlocks.Application;
 using SuperMarket.BuildingBlocks.Results;
+using SuperMarket.Identity.API.Authorization;
 using SuperMarket.Identity.Application.Branches.Commands.ActivateBranch;
 using SuperMarket.Identity.Application.Branches.Commands.CreateBranch;
 using SuperMarket.Identity.Application.Branches.Commands.DeactivateBranch;
@@ -11,6 +11,7 @@ using SuperMarket.Identity.Application.Branches.Commands.DeleteBranch;
 using SuperMarket.Identity.Application.Branches.Commands.UpdateBranch;
 using SuperMarket.Identity.Application.Branches.Queries.GetBranchById;
 using SuperMarket.Identity.Application.Branches.Queries.ListBranches;
+using SuperMarket.Identity.Domain.Constants;
 
 namespace SuperMarket.Identity.API.Endpoints;
 
@@ -19,7 +20,8 @@ public static class BranchEndpoints
     public static IEndpointRouteBuilder MapBranchEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/branches")
-            .WithTags("Branches");
+            .WithTags("Branches")
+            .RequireAuthorization();
 
         // --- 1. Create Physical Branch ---
         group.MapPost("/", async (CreateBranchRequest request, ISender sender, CancellationToken cancellationToken) =>
@@ -45,6 +47,7 @@ public static class BranchEndpoints
                     value: new { id = result.Value })
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Create)
         .WithName("CreateBranch")
         .WithSummary("Creates a new physical supermarket retail branch.")
         .Produces(StatusCodes.Status201Created)
@@ -71,6 +74,7 @@ public static class BranchEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Read)
         .WithName("ListBranches")
         .WithSummary("Retrieves a paginated list of retail branches with optional search and active status filters.")
         .Produces(StatusCodes.Status200OK)
@@ -86,6 +90,7 @@ public static class BranchEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Read)
         .WithName("GetBranchById")
         .WithSummary("Retrieves complete operational details and operating hours for a specific retail branch.")
         .Produces(StatusCodes.Status200OK)
@@ -112,6 +117,7 @@ public static class BranchEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Update)
         .WithName("UpdateBranch")
         .WithSummary("Updates operational details and operating hours for an existing retail branch.")
         .Produces(StatusCodes.Status204NoContent)
@@ -129,6 +135,7 @@ public static class BranchEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Activate)
         .WithName("ActivateBranch")
         .WithSummary("Restores operational status to an active state for a retail branch.")
         .Produces(StatusCodes.Status204NoContent)
@@ -145,6 +152,7 @@ public static class BranchEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Deactivate)
         .WithName("DeactivateBranch")
         .WithSummary("Temporarily suspends operational activity for a retail branch.")
         .Produces(StatusCodes.Status204NoContent)
@@ -161,6 +169,7 @@ public static class BranchEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.Deactivate)
         .WithName("DeleteBranch")
         .WithSummary("Soft-deletes a retail branch while preserving all historical and fiscal records.")
         .Produces(StatusCodes.Status204NoContent)

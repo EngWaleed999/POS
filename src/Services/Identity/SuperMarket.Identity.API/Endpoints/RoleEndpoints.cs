@@ -1,11 +1,12 @@
 using MediatR;
-
 using SuperMarket.BuildingBlocks.Application;
 using SuperMarket.BuildingBlocks.Results;
+using SuperMarket.Identity.API.Authorization;
 using SuperMarket.Identity.Application.Roles.Commands.CreateRole;
 using SuperMarket.Identity.Application.Roles.Commands.UpdateRolePermissionGroups;
 using SuperMarket.Identity.Application.Roles.Queries.GetRoleById;
 using SuperMarket.Identity.Application.Roles.Queries.ListRoles;
+using SuperMarket.Identity.Domain.Constants;
 
 namespace SuperMarket.Identity.API.Endpoints;
 
@@ -18,7 +19,8 @@ public static class RoleEndpoints
     public static IEndpointRouteBuilder MapRoleEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/roles")
-            .WithTags("Roles");
+            .WithTags("Roles")
+            .RequireAuthorization();
 
         // 1. Create Dynamic Role
         group.MapPost("/", async (CreateRoleRequest request, ISender sender, CancellationToken cancellationToken) =>
@@ -36,6 +38,7 @@ public static class RoleEndpoints
                     value: new { id = result.Value })
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Roles.Create)
         .WithName("CreateRole")
         .WithSummary("Creates a new dynamic system or branch role.")
         .Produces(StatusCodes.Status201Created)
@@ -62,6 +65,7 @@ public static class RoleEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Roles.Read)
         .WithName("ListRoles")
         .WithSummary("Retrieves offset-paginated dynamic system roles with search and active status filters.")
         .Produces<PagedList<RoleSummaryResponse>>(StatusCodes.Status200OK);
@@ -76,6 +80,7 @@ public static class RoleEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Roles.Read)
         .WithName("GetRoleById")
         .WithSummary("Retrieves detailed role information including assigned permission groups.")
         .Produces<RoleDetailResponse>(StatusCodes.Status200OK)
@@ -98,6 +103,7 @@ public static class RoleEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Roles.Update)
         .WithName("UpdateRolePermissionGroups")
         .WithSummary("Synchronizes the assigned permission group packages for a role using in-memory state-diffing.")
         .Produces(StatusCodes.Status204NoContent)

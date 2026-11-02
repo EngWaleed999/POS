@@ -33,6 +33,7 @@ public static class IdentitySeedCatalog
     {
         // --- System Admin: Users Management ---
         new("users", "create", "all", "User Management"),
+        new("users", "read", "all", "User Management"),
         new("users", "update", "all", "User Management"),
         new("users", "activate", "all", "User Management"),
         new("users", "deactivate", "all", "User Management"),
@@ -41,11 +42,14 @@ public static class IdentitySeedCatalog
 
         // --- System Admin: Roles Management ---
         new("roles", "create", "all", "Role Management"),
+        new("roles", "read", "all", "Role Management"),
         new("roles", "update", "all", "Role Management"),
         new("roles", "delete", "all", "Role Management"),
+        new("permission-groups", "read", "all", "Role Management"),
 
         // --- System Admin: Branches Management ---
         new("branches", "create", "all", "Branch Management"),
+        new("branches", "read", "all", "Branch Management"),
         new("branches", "update", "all", "Branch Management"),
         new("branches", "activate", "all", "Branch Management"),
         new("branches", "deactivate", "all", "Branch Management"),
@@ -194,9 +198,9 @@ public static class IdentitySeedCatalog
             Description: "Full administrative access: user management, roles, branches, system settings, backups, and monitoring.",
             PermissionKeys: new[]
             {
-                "users:create:all", "users:update:all", "users:activate:all", "users:deactivate:all", "users:delete:all", "users:reset-password:all",
-                "roles:create:all", "roles:update:all", "roles:delete:all",
-                "branches:create:all", "branches:update:all", "branches:activate:all", "branches:deactivate:all", "branches:transfer-manager:all",
+                "users:create:all", "users:read:all", "users:update:all", "users:activate:all", "users:deactivate:all", "users:delete:all", "users:reset-password:all",
+                "roles:create:all", "roles:read:all", "roles:update:all", "roles:delete:all", "permission-groups:read:all",
+                "branches:create:all", "branches:read:all", "branches:update:all", "branches:activate:all", "branches:deactivate:all", "branches:transfer-manager:all",
                 "settings:tax-currency:manage", "settings:notifications:manage", "settings:payment-gateways:manage", "settings:receipt-templates:manage",
                 "monitoring:branches-data:view", "monitoring:audit-logs:view", "monitoring:error-logs:view", "monitoring:system-metrics:view", "monitoring:alerts:manage",
                 "backup:create:manual", "backup:schedule:manage", "backup:restore:execute", "backup:export:data"
@@ -207,6 +211,7 @@ public static class IdentitySeedCatalog
             Description: "Branch operations management: staff control, sales overrides, stock requests, shift audits, and branch settings.",
             PermissionKeys: new[]
             {
+                "users:read:all", "branches:read:all",
                 "branch-employees:create:branch", "branch-employees:update:branch", "branch-employees:status:branch", "branch-employees:reset-password:branch", "branch-employees:assign-role:branch",
                 "sales:view:branch", "sales:void:branch", "returns:approve:branch", "discounts:override-limit:branch", "sales-reports:export:branch",
                 "inventory:view:branch", "inventory:low-stock:view", "inventory:transfer-request:branch", "inventory:adjustment-approve:branch", "inventory:movements:view",

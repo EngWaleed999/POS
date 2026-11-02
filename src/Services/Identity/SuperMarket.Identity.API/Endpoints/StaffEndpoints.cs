@@ -3,6 +3,7 @@
 using MediatR;
 using SuperMarket.BuildingBlocks.Application;
 using SuperMarket.BuildingBlocks.Results;
+using SuperMarket.Identity.API.Authorization;
 using SuperMarket.Identity.Application.Staff.Commands.ActivateStaff;
 using SuperMarket.Identity.Application.Staff.Commands.ChangeStaffRole;
 using SuperMarket.Identity.Application.Staff.Commands.DeactivateStaff;
@@ -11,6 +12,7 @@ using SuperMarket.Identity.Application.Staff.Commands.SetStaffPin;
 using SuperMarket.Identity.Application.Staff.Commands.TransferStaff;
 using SuperMarket.Identity.Application.Staff.Queries.GetStaffById;
 using SuperMarket.Identity.Application.Staff.Queries.ListStaff;
+using SuperMarket.Identity.Domain.Constants;
 
 namespace SuperMarket.Identity.API.Endpoints;
 
@@ -19,7 +21,8 @@ public static class StaffEndpoints
     public static IEndpointRouteBuilder MapStaffEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/staff")
-            .WithTags("Staff");
+            .WithTags("Staff")
+            .RequireAuthorization();
 
         // --- 1. Register New Staff Member ---
         group.MapPost("/", async (RegisterStaffRequest request, ISender sender, CancellationToken cancellationToken) =>
@@ -42,6 +45,7 @@ public static class StaffEndpoints
                     value: new { id = result.Value })
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.Create)
         .WithName("RegisterStaff")
         .WithSummary("Registers a new staff member or cashier across IAM and local domain.")
         .Produces(StatusCodes.Status201Created)
@@ -72,6 +76,7 @@ public static class StaffEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.Read)
         .WithName("ListStaff")
         .WithSummary("Retrieves a paginated list of staff members with branch, role, and search filters.")
         .Produces(StatusCodes.Status200OK)
@@ -87,6 +92,7 @@ public static class StaffEndpoints
                 ? Results.Ok(result.Value)
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.Read)
         .WithName("GetStaffById")
         .WithSummary("Retrieves complete profile details for a specific staff member.")
         .Produces(StatusCodes.Status200OK)
@@ -105,6 +111,7 @@ public static class StaffEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.ResetPassword)
         .WithName("SetStaffPin")
         .WithSummary("Sets or updates the cashier fast-login PIN secured with PBKDF2.")
         .Produces(StatusCodes.Status204NoContent)
@@ -124,6 +131,7 @@ public static class StaffEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Branches.TransferManager)
         .WithName("TransferStaff")
         .WithSummary("Reassigns a staff member to another branch or headquarters.")
         .Produces(StatusCodes.Status204NoContent)
@@ -143,6 +151,7 @@ public static class StaffEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.Update)
         .WithName("ChangeStaffRole")
         .WithSummary("Updates a staff member's role and synchronizes permissions in Keycloak.")
         .Produces(StatusCodes.Status204NoContent)
@@ -159,6 +168,7 @@ public static class StaffEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.Activate)
         .WithName("ActivateStaff")
         .WithSummary("Restores an active account status for a staff member.")
         .Produces(StatusCodes.Status204NoContent)
@@ -175,6 +185,7 @@ public static class StaffEndpoints
                 ? Results.NoContent()
                 : result.ToProblemDetails();
         })
+        .RequirePermission(IdentityPermissions.Users.Deactivate)
         .WithName("DeactivateStaff")
         .WithSummary("Suspends a staff member account and invalidates Keycloak sessions.")
         .Produces(StatusCodes.Status204NoContent)

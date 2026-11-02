@@ -21,9 +21,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\..\..\src\BuildingBlocks\SuperMarket.BuildingBlocks\SuperMarket.BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\..\..\src\Services\Identity\SuperMarket.Identity.Domain\SuperMarket.Identity.Domain.csproj" />
     <ProjectReference Include="..\..\..\..\src\Services\Identity\SuperMarket.Identity.Application\SuperMarket.Identity.Application.csproj" />
+    <ProjectReference Include="..\..\..\..\src\Services\Identity\SuperMarket.Identity.API\SuperMarket.Identity.API.csproj" />
   </ItemGroup>
 
 </Project>
