@@ -19,6 +19,12 @@ public interface IIdentityProviderService
         string roleName,
         CancellationToken cancellationToken = default);
 
+    Task<Result> ReplaceRoleAsync(
+        string keycloakUserId,
+        string? oldRoleName,
+        string newRoleName,
+        CancellationToken cancellationToken = default);
+
     Task<Result> SetUserActiveStatusAsync(
         string keycloakUserId,
         bool isActive,
@@ -34,5 +40,12 @@ public interface IIdentityProviderService
 
     Task<Result<string>> GetUserIdByUsernameAsync(
         string username,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Invalidates all active sessions for the specified user in Keycloak, forcing immediate re-authentication.
+    /// </summary>
+    Task<Result> LogoutUserAsync(
+        string keycloakUserId,
         CancellationToken cancellationToken = default);
 }

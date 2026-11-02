@@ -172,6 +172,134 @@ public sealed class KeycloakIdentityProviderService : IIdentityProviderService
         return Result.Success();
     }
 
+    public async Task<Result> ReplaceRoleAsync(
+        string keycloakUserId,
+        string? oldRoleName,
+        string newRoleName,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(keycloakUserId) || string.IsNullOrWhiteSpace(newRoleName))
+        {
+            return Result.Failure(UserErrors.IdentityProviderFailure);
+        }
+
+        var tokenResult = await GetAdminAccessTokenAsync(cancellationToken);
+        if (tokenResult.IsFailure)
+        {
+            return tokenResult;
+        }
+
+        try
+        {
+            // 1. Fetch current realm role mappings for user
+            using var currentRolesRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"admin/realms/{_options.Realm}/users/{keycloakUserId}/role-mappings/realm");
+            currentRolesRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
+
+            using var currentRolesResponse = await _httpClient.SendAsync(currentRolesRequest, cancellationToken);
+            if (!currentRolesResponse.IsSuccessStatusCode)
+            {
+                var error = await currentRolesResponse.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError("Failed to fetch current roles for Keycloak user {UserId}: {Error}", keycloakUserId, error);
+                return Result.Failure(UserErrors.IdentityProviderFailure);
+            }
+
+            var currentRolesJson = await currentRolesResponse.Content.ReadAsStringAsync(cancellationToken);
+            var currentRoles = JsonSerializer.Deserialize<List<KeycloakRoleRepresentation>>(currentRolesJson, JsonOptions) ?? [];
+
+            // 2. Identify old role(s) to remove (matching oldRoleName if specified)
+            var rolesToRemove = new List<KeycloakRoleRepresentation>();
+            if (!string.IsNullOrWhiteSpace(oldRoleName))
+            {
+                var matchingOldRole = currentRoles.FirstOrDefault(r => string.Equals(r.Name, oldRoleName, StringComparison.OrdinalIgnoreCase));
+                if (matchingOldRole is not null)
+                {
+                    rolesToRemove.Add(matchingOldRole);
+                }
+            }
+
+            // 3. Remove old role(s) if present
+            if (rolesToRemove.Count > 0)
+            {
+                var removePayload = JsonSerializer.Serialize(rolesToRemove, JsonOptions);
+                using var removeRequest = new HttpRequestMessage(
+                    HttpMethod.Delete,
+                    $"admin/realms/{_options.Realm}/users/{keycloakUserId}/role-mappings/realm")
+                {
+                    Content = new StringContent(removePayload, Encoding.UTF8, "application/json")
+                };
+                removeRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
+
+                using var removeResponse = await _httpClient.SendAsync(removeRequest, cancellationToken);
+                if (!removeResponse.IsSuccessStatusCode)
+                {
+                    var error = await removeResponse.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogError("Failed to remove old role(s) from Keycloak user {UserId}: {Error}", keycloakUserId, error);
+                    return Result.Failure(UserErrors.IdentityProviderFailure);
+                }
+
+                _logger.LogInformation("Removed old role(s) [{Roles}] from Keycloak user {UserId}",
+                    string.Join(", ", rolesToRemove.Select(r => r.Name)), keycloakUserId);
+            }
+
+            // 4. Add new role if not already assigned
+            var isAlreadyAssigned = currentRoles.Any(r => string.Equals(r.Name, newRoleName, StringComparison.OrdinalIgnoreCase));
+            if (!isAlreadyAssigned)
+            {
+                // Fetch new role representation by name
+                using var getRoleRequest = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"admin/realms/{_options.Realm}/roles/{Uri.EscapeDataString(newRoleName)}");
+                getRoleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
+
+                using var getRoleResponse = await _httpClient.SendAsync(getRoleRequest, cancellationToken);
+                if (!getRoleResponse.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("New role {RoleName} not found in Keycloak realm {_Realm}", newRoleName, _options.Realm);
+                    return Result.Failure(UserErrors.RoleNotFound);
+                }
+
+                var roleJson = await getRoleResponse.Content.ReadAsStringAsync(cancellationToken);
+                var newRoleRepresentation = JsonSerializer.Deserialize<KeycloakRoleRepresentation>(roleJson, JsonOptions);
+                if (newRoleRepresentation is null)
+                {
+                    return Result.Failure(UserErrors.RoleNotFound);
+                }
+
+                var addPayload = JsonSerializer.Serialize(new[] { newRoleRepresentation }, JsonOptions);
+                using var addRequest = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"admin/realms/{_options.Realm}/users/{keycloakUserId}/role-mappings/realm")
+                {
+                    Content = new StringContent(addPayload, Encoding.UTF8, "application/json")
+                };
+                addRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
+
+                using var addResponse = await _httpClient.SendAsync(addRequest, cancellationToken);
+                if (!addResponse.IsSuccessStatusCode)
+                {
+                    var error = await addResponse.Content.ReadAsStringAsync(cancellationToken);
+                    _logger.LogError("Failed to add new role {RoleName} to Keycloak user {UserId}: {Error}", newRoleName, keycloakUserId, error);
+                    return Result.Failure(UserErrors.IdentityProviderFailure);
+                }
+
+                _logger.LogInformation("Assigned new role {RoleName} to Keycloak user {UserId}", newRoleName, keycloakUserId);
+            }
+            else
+            {
+                _logger.LogInformation("New role {RoleName} is already assigned to Keycloak user {UserId}. Skipping addition.", newRoleName, keycloakUserId);
+            }
+
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error communicating with Keycloak while replacing role for user {UserId}", keycloakUserId);
+            return Result.Failure(UserErrors.IdentityProviderFailure);
+        }
+    }
+
     public async Task<Result> SetUserActiveStatusAsync(
         string keycloakUserId,
         bool isActive,
@@ -224,6 +352,56 @@ public sealed class KeycloakIdentityProviderService : IIdentityProviderService
 
         _logger.LogWarning("Deleted Keycloak user {UserId} via compensating transaction", keycloakUserId);
         return Result.Success();
+    }
+
+    public async Task<Result> LogoutUserAsync(
+        string keycloakUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(keycloakUserId))
+        {
+            return Result.Failure(UserErrors.IdentityProviderFailure);
+        }
+
+        var tokenResult = await GetAdminAccessTokenAsync(cancellationToken);
+        if (tokenResult.IsFailure)
+        {
+            return tokenResult;
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"admin/realms/{_options.Realm}/users/{keycloakUserId}/logout");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenResult.Value);
+
+            using var response = await _httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                _logger.LogError(
+                    "Failed to log out Keycloak user {UserId}. Status: {StatusCode}, Error: {Error}",
+                    keycloakUserId,
+                    response.StatusCode,
+                    errorBody);
+
+                return Result.Failure(UserErrors.IdentityProviderFailure);
+            }
+
+            _logger.LogInformation("Successfully invalidated active sessions for Keycloak user {UserId}", keycloakUserId);
+            return Result.Success();
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Network error communicating with Keycloak while logging out user {UserId}", keycloakUserId);
+            return Result.Failure(UserErrors.IdentityProviderFailure);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error communicating with Keycloak while logging out user {UserId}", keycloakUserId);
+            return Result.Failure(UserErrors.IdentityProviderFailure);
+        }
     }
 
     public async Task<Result<string>> GenerateUserTokenAsync(

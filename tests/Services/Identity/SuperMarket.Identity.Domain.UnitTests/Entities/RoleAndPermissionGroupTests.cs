@@ -23,6 +23,18 @@ public sealed class RoleAndPermissionGroupTests
         permission.Action.Should().Be("open");
         permission.Scope.Should().Be("own");
         permission.Category.Should().Be("Sales Operations");
+        permission.Key.Should().Be("shifts:open:own");
+    }
+
+    [Theory]
+    [InlineData("sales", "view", "branch", "sales:view:branch")]
+    [InlineData("USERS", "CREATE", "ALL", "users:create:all")]
+    [InlineData("   roles  ", "  update  ", "  all  ", "roles:update:all")]
+    public void Permission_FormatKey_ShouldProduceUniformResourceActionScopeContract(
+        string resource, string action, string scope, string expectedKey)
+    {
+        var key = Permission.FormatKey(resource, action, scope);
+        key.Should().Be(expectedKey);
     }
 
     [Theory]

@@ -16,6 +16,17 @@ public sealed class Permission : Entity<Guid>
     public string Scope { get; private set; } = default!;
     public string Category { get; private set; } = default!;
 
+    /// <summary>
+    /// Gets the canonical permission key in the unified contract format: resource:action:scope (lowercase).
+    /// </summary>
+    public string Key => $"{Resource}:{Action}:{Scope}";
+
+    /// <summary>
+    /// Formats permission components into the canonical contract: resource:action:scope (lowercase).
+    /// </summary>
+    public static string FormatKey(string resource, string action, string scope) =>
+        $"{resource.Trim().ToLowerInvariant()}:{action.Trim().ToLowerInvariant()}:{scope.Trim().ToLowerInvariant()}";
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------

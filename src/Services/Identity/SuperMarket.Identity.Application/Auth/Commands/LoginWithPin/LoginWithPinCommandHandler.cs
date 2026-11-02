@@ -100,7 +100,7 @@ public sealed class LoginWithPinCommandHandler : ICommandHandler<LoginWithPinCom
             where rpg.RoleId == user.RoleId
             join pgi in _readDb.PermissionGroupItems on rpg.GroupId equals pgi.GroupId
             join p in _readDb.Permissions on pgi.PermissionId equals p.Id
-            select $"{p.Action}:{p.Resource}:{p.Scope}"
+            select $"{p.Resource}:{p.Action}:{p.Scope}".ToLowerInvariant()
         ).Distinct().ToListAsync(cancellationToken);
 
         // --- 10. Delegate Token Issuance to External Identity Provider (Keycloak) ---

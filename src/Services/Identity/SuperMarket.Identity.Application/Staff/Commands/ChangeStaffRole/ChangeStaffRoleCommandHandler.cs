@@ -1,5 +1,4 @@
-// Handles changing a staff member's role and synchronizing permissions with Keycloak.
-
+using Microsoft.Extensions.Logging;
 using SuperMarket.BuildingBlocks.Application;
 using SuperMarket.BuildingBlocks.Results;
 using SuperMarket.Identity.Application.Abstractions.Authentication;
@@ -14,17 +13,20 @@ public sealed class ChangeStaffRoleCommandHandler : ICommandHandler<ChangeStaffR
     private readonly IRoleRepository _roleRepository;
     private readonly IIdentityProviderService _identityProviderService;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<ChangeStaffRoleCommandHandler> _logger;
 
     public ChangeStaffRoleCommandHandler(
         IUserRepository userRepository,
         IRoleRepository roleRepository,
         IIdentityProviderService identityProviderService,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ILogger<ChangeStaffRoleCommandHandler> logger)
     {
         _userRepository = userRepository;
         _roleRepository = roleRepository;
         _identityProviderService = identityProviderService;
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result> Handle(ChangeStaffRoleCommand command, CancellationToken cancellationToken)
@@ -41,11 +43,47 @@ public sealed class ChangeStaffRoleCommandHandler : ICommandHandler<ChangeStaffR
             return Result.Failure(UserErrors.RoleNotFound);
         }
 
-        // Synchronize role assignment in external Identity Provider
-        var idpResult = await _identityProviderService.AssignRoleAsync(user.KeycloakUserId, newRole.RoleName, cancellationToken);
+        if (user.RoleId == newRole.Id)
+        {
+            return Result.Success();
+        }
+
+        var oldRole = await _roleRepository.GetByIdAsync(user.RoleId, cancellationToken);
+        var oldRoleName = oldRole?.RoleName;
+
+        // Synchronize role replacement in external Identity Provider (Keycloak)
+        var idpResult = await _identityProviderService.ReplaceRoleAsync(
+            user.KeycloakUserId,
+            oldRoleName,
+            newRole.RoleName,
+            cancellationToken);
+
         if (idpResult.IsFailure)
         {
             return idpResult;
+        }
+
+        // Invalidate active sessions in Keycloak to force immediate re-authentication.
+        // Role replacement is the core invariant; logout failure logs a warning and proceeds.
+        try
+        {
+            var logoutResult = await _identityProviderService.LogoutUserAsync(user.KeycloakUserId, cancellationToken);
+            if (logoutResult.IsFailure)
+            {
+                _logger.LogWarning(
+                    "Failed to invalidate active sessions in Keycloak for user {UserId} ({KeycloakUserId}): {Error}. Role change will proceed.",
+                    user.Id,
+                    user.KeycloakUserId,
+                    logoutResult.Error.Code);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Unexpected error while invalidating Keycloak sessions for user {UserId} ({KeycloakUserId}). Role change will proceed.",
+                user.Id,
+                user.KeycloakUserId);
         }
 
         var changeResult = user.ChangeRole(command.NewRoleId);
