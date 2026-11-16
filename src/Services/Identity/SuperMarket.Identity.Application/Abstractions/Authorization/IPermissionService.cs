@@ -22,6 +22,17 @@ public interface IPermissionService
     Task InvalidateUserPermissionsAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Immediately revokes all access for a deactivated/deleted user by evicting permission sets
+    /// and writing a temporary disabled tombstone to block access in sub-milliseconds without database hits.
+    /// </summary>
+    Task RevokeUserAccessAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears the disabled tombstone and invalidates cache when a staff member is re-activated.
+    /// </summary>
+    Task UnmarkUserDisabledAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Immediately invalidates cached permissions for all users assigned to the specified role.
     /// </summary>
     Task InvalidateRolePermissionsAsync(Guid roleId, CancellationToken cancellationToken = default);

@@ -15,7 +15,9 @@ public sealed class RedisPermissionService : IPermissionService
 {
     public static readonly ActivitySource ActivitySource = new("SuperMarket.Identity.Redis", "1.0.0");
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan DisabledTtl = TimeSpan.FromHours(1);
     private const string KeyPrefix = "pos:perm:usr:";
+    private const string DisabledKeyPrefix = "pos:usr:disabled:";
 
     private readonly IConnectionMultiplexer? _redis;
     private readonly IIdentityReadDbContext _readDb;
@@ -43,6 +45,7 @@ public sealed class RedisPermissionService : IPermissionService
 
         var normalizedPermission = permission.Trim().ToLowerInvariant();
         var cacheKey = GetCacheKey(userId);
+        var disabledKey = GetDisabledKey(userId);
         var db = GetDatabase();
 
         // 1. Check Redis Cache (Hit Path)
@@ -55,6 +58,14 @@ public sealed class RedisPermissionService : IPermissionService
 
             try
             {
+                // Immediate short-circuit: Verify if user has an active disabled tombstone
+                if (await db.KeyExistsAsync(disabledKey))
+                {
+                    activity?.SetTag("pos.user.disabled", true);
+                    activity?.SetTag("pos.cache.hit", true);
+                    return false;
+                }
+
                 if (await db.KeyExistsAsync(cacheKey))
                 {
                     var hasPerm = await db.SetContainsAsync(cacheKey, normalizedPermission);
@@ -110,6 +121,7 @@ public sealed class RedisPermissionService : IPermissionService
         }
 
         var cacheKey = GetCacheKey(userId);
+        var disabledKey = GetDisabledKey(userId);
         var db = GetDatabase();
 
         // 1. Check Redis Cache
@@ -122,6 +134,14 @@ public sealed class RedisPermissionService : IPermissionService
 
             try
             {
+                // Immediate short-circuit: Verify if user has an active disabled tombstone
+                if (await db.KeyExistsAsync(disabledKey))
+                {
+                    activity?.SetTag("pos.user.disabled", true);
+                    activity?.SetTag("pos.cache.hit", true);
+                    return [];
+                }
+
                 if (await db.KeyExistsAsync(cacheKey))
                 {
                     var members = await db.SetMembersAsync(cacheKey);
@@ -192,6 +212,68 @@ public sealed class RedisPermissionService : IPermissionService
         }
     }
 
+    public async Task RevokeUserAccessAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var db = GetDatabase();
+        if (db is null) return;
+
+        var cacheKey = GetCacheKey(userId);
+        var disabledKey = GetDisabledKey(userId);
+
+        using var activity = ActivitySource.StartActivity("redis.revoke_user");
+        activity?.SetTag("db.system", "redis");
+        activity?.SetTag("db.operation", "RevokeUserAccess");
+        activity?.SetTag("db.redis.user_id", userId.ToString());
+
+        try
+        {
+            var batch = db.CreateBatch();
+            _ = batch.KeyDeleteAsync(cacheKey);
+            _ = batch.StringSetAsync(disabledKey, "1", DisabledTtl);
+            batch.Execute();
+
+            _logger.LogInformation("Revoked permissions and wrote disabled tombstone in Redis for user {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogWarning(ex, "Failed to revoke Redis access for user {UserId}", userId);
+        }
+    }
+
+    public async Task UnmarkUserDisabledAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var db = GetDatabase();
+        if (db is null) return;
+
+        var cacheKey = GetCacheKey(userId);
+        var disabledKey = GetDisabledKey(userId);
+
+        using var activity = ActivitySource.StartActivity("redis.unmark_disabled");
+        activity?.SetTag("db.system", "redis");
+        activity?.SetTag("db.operation", "UnmarkUserDisabled");
+        activity?.SetTag("db.redis.user_id", userId.ToString());
+
+        try
+        {
+            var batch = db.CreateBatch();
+            _ = batch.KeyDeleteAsync(disabledKey);
+            _ = batch.KeyDeleteAsync(cacheKey);
+            batch.Execute();
+
+            _logger.LogInformation("Removed disabled tombstone and cleared permission cache in Redis for user {UserId}", userId);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogWarning(ex, "Failed to unmark disabled status in Redis for user {UserId}", userId);
+        }
+    }
+
     public async Task InvalidateRolePermissionsAsync(
         Guid roleId,
         CancellationToken cancellationToken = default)
@@ -228,6 +310,7 @@ public sealed class RedisPermissionService : IPermissionService
     }
 
     private static string GetCacheKey(Guid userId) => $"{KeyPrefix}{userId:N}";
+    private static string GetDisabledKey(Guid userId) => $"{DisabledKeyPrefix}{userId:N}";
 
     private IDatabase? GetDatabase()
     {
@@ -250,22 +333,38 @@ public sealed class RedisPermissionService : IPermissionService
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var roleId = await _readDb.Users
+        var userState = await _readDb.Users
             .AsNoTracking()
-            .Where(u => u.Id == userId && u.IsActive && !u.IsDeleted)
-            .Select(u => (Guid?)u.RoleId)
+            .Where(u => u.Id == userId && !u.IsDeleted)
+            .Select(u => new { u.IsActive, u.RoleId })
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (roleId is null)
+        if (userState is null || !userState.IsActive)
         {
+            // Defensive tombstone: Inactive user hitting PostgreSQL on cache miss is cached as disabled
+            // to prevent Cache Penetration DoS on the database.
+            var db = GetDatabase();
+            if (db is not null && userState is not null && !userState.IsActive)
+            {
+                try
+                {
+                    await db.StringSetAsync(GetDisabledKey(userId), "1", DisabledTtl);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to write disabled tombstone for inactive user {UserId}.", userId);
+                }
+            }
             return [];
         }
+
+        var roleId = userState.RoleId;
 
         // Direct 3-way LINQ Join projection as per ADR-016
         var permissions = await (from rpg in _readDb.RolePermissionGroups
                                  join pgi in _readDb.PermissionGroupItems on rpg.GroupId equals pgi.GroupId
                                  join p in _readDb.Permissions on pgi.PermissionId equals p.Id
-                                 where rpg.RoleId == roleId.Value
+                                 where rpg.RoleId == roleId
                                  select $"{p.Resource}:{p.Action}:{p.Scope}".ToLowerInvariant())
                                  .Distinct()
                                  .ToListAsync(cancellationToken);

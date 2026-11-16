@@ -55,3 +55,28 @@ Every component, layer, service, configuration, and test must follow this protoc
 - API errors must strictly comply with RFC 7807 / RFC 9457 `ProblemDetails` via Result pattern mapping.
 - Never leak internal infrastructure exceptions, stack traces, or SQL error details to clients.
 - Use structured logging (`Serilog`) with correlation IDs and audit timestamps on all state mutations.
+
+---
+
+## 7. Business Logic Flow & Numbered Step Documentation (MANDATORY)
+- Every Command Handler, Query Handler, and Domain Service MUST explicitly document its logical execution flow in a structured boxed comment header at the top of the file:
+  ```csharp
+  // -------------------------------------------------------------------------
+  // Business Logic Flow:
+  // 1. [Pre-flight Validation]: Verify entity existence, field invariants, and uniqueness.
+  // 2. [External System Sync]: Synchronize with external services (e.g., Keycloak).
+  // 3. [Domain Execution]: Mutate domain aggregate root and raise domain events.
+  // 4. [Persistence]: Commit changes to local database.
+  // 5. [Post-Commit / Side Effects]: Evict cache or trigger background notifications.
+  // -------------------------------------------------------------------------
+  ```
+- Inside the main method or `Handle()` function, code blocks MUST be cleanly separated and annotated with the exact matching numbered headers:
+  ```csharp
+  // --- 1. Pre-flight Validation: Verify Entity Existence ---
+  ...
+  // --- 2. External System Sync: Keycloak Update ---
+  ...
+  // --- 3. Domain Execution: Mutate Domain Model ---
+  ...
+  ```
+

@@ -81,3 +81,35 @@
    * التفريق بين الأخطاء المتوقعة (Validation / Business Failures) والأخطاء غير المتوقعة (Infrastructure / Crash Exceptions).
 2. **حظر تسريب الأسرار في السجلات:**
    * يُمنع منعاً باتاً تسجيل كلمات المرور، أرقام الـ PIN، التوكنات، أو أرقام البطاقات في ملفات السجلات (Logs).
+
+---
+
+## 6. معايير كتابة وترقيم منطق الأعمال (Business Logic Flow Standards)
+
+1. **توثيق تسلسل البزنس في رأس الملف (Mandatory Header Sequence):**
+   * في بداية أي ملف Command Handler، Query Handler، أو Domain Service، يجب كتابة التسلسل المنطقي والزمني الكامل للعملية في ترويسة واضحة ومؤطرة بالصيغة التالية:
+     ```csharp
+     // -------------------------------------------------------------------------
+     // Business Logic Flow:
+     // 1. [Pre-flight Validation]: التحقق من وجود الكيانات وصلاحية الحقول وعدم التكرار.
+     // 2. [External System Sync]: مزامنة النظام الخارجي (مثل Keycloak) إن وُجد.
+     // 3. [Domain Execution]: تنفيذ قواعد المجال وتعديل الكيان وإطلاق أحداث الدومين.
+     // 4. [Persistence]: حفظ التغييرات محلياً في قاعدة البيانات.
+     // 5. [Post-Commit / Side Effects]: إبطال الكاش أو إطلاق الإشعارات.
+     // -------------------------------------------------------------------------
+     ```
+2. **الترقيم الإلزامي داخل متن الكود (In-Code Step Numbering):**
+   * داخل دالة `Handle` أو الميثود الأساسية، يجب تقسيم الكود إلى كتل برمجية متطابقة حرفياً مع أرقام التسلسل المكتوبة في الترويسة:
+     ```csharp
+     // --- 1. Pre-flight Validation: Verify Entity Existence ---
+     ...
+     // --- 2. External System Sync: Synchronize with IDP ---
+     ...
+     // --- 3. Domain Execution: Mutate Aggregate Root ---
+     ...
+     // --- 4. Persistence: Commit to Database ---
+     ...
+     // --- 5. Post-Commit / Side Effects: Invalidate Cache ---
+     ...
+     ```
+
