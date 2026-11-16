@@ -1,4 +1,13 @@
-// Orchestrates cashier fast-login verification, lockout enforcement, and session token generation.
+// -------------------------------------------------------------------------
+// Business Logic Flow:
+// 1. [Pre-flight Validation]: Find cashier user by username and verify active non-deleted status.
+// 2. [Security Lockout Check]: Enforce account lockout cooldown period on repeated failures.
+// 3. [PIN Verification]: Constant-time cryptographic verification of PBKDF2 PIN hash.
+// 4. [Terminal Validation]: Verify POS register terminal status and store branch affinity.
+// 5. [State Mutation & Audit]: Record successful login timestamp and persist to database.
+// 6. [Authorization Resolution]: Fetch role and retrieve assigned granular permissions.
+// 7. [Token Issuance]: Delegate token generation to Keycloak and extract accurate expires_in.
+// -------------------------------------------------------------------------
 
 using Microsoft.EntityFrameworkCore;
 using SuperMarket.BuildingBlocks.Application;
@@ -42,26 +51,25 @@ public sealed class LoginWithPinCommandHandler : ICommandHandler<LoginWithPinCom
     {
         var now = DateTimeOffset.UtcNow;
 
-        // --- 1. Find User by Username ---
+        // --- 1. Pre-flight Validation: Find cashier user and verify active status ---
         var user = await _userRepository.GetByUsernameAsync(command.Username, cancellationToken);
         if (user is null || !user.IsActive || user.IsDeleted)
         {
             return Result.Failure<CashierLoginResponse>(UserErrors.InvalidCredentials);
         }
 
-        // --- 2. Check Lockout State ---
+        // --- 2. Security Lockout Check: Enforce account lockout cooldown ---
         if (user.IsLockedOut(now))
         {
             return Result.Failure<CashierLoginResponse>(UserErrors.AccountLockedOut);
         }
 
-        // --- 3. Verify PIN Hash Configuration ---
+        // --- 3. PIN Verification: Constant-time cryptographic verification of PBKDF2 PIN hash ---
         if (string.IsNullOrWhiteSpace(user.PinHash))
         {
             return Result.Failure<CashierLoginResponse>(UserErrors.PinNotConfigured);
         }
 
-        // --- 4. Verify Cryptographic PIN Hash (Constant-Time) ---
         bool isPinValid = _pinHasher.VerifyPin(command.Pin, user.PinHash);
         if (!isPinValid)
         {
@@ -70,31 +78,29 @@ public sealed class LoginWithPinCommandHandler : ICommandHandler<LoginWithPinCom
             return Result.Failure<CashierLoginResponse>(UserErrors.InvalidCredentials);
         }
 
-        // --- 5. Verify POS Register Terminal Existence & Active Status ---
+        // --- 4. Terminal Validation: Verify POS register terminal status and store branch affinity ---
         var register = await _posRegisterRepository.GetByIdAsync(command.RegisterId, cancellationToken);
         if (register is null || !register.IsActive || register.IsDeleted)
         {
             return Result.Failure<CashierLoginResponse>(UserErrors.RegisterNotFound);
         }
 
-        // --- 6. Verify Store Branch Affinity ---
         if (user.BranchId.HasValue && user.BranchId.Value != register.BranchId)
         {
             return Result.Failure<CashierLoginResponse>(UserErrors.BranchMismatch);
         }
 
-        // --- 7. Record Successful Login in Aggregate ---
+        // --- 5. State Mutation & Audit: Record successful login timestamp and persist to database ---
         user.RecordLogin(now);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // --- 8. Fetch Role Details ---
+        // --- 6. Authorization Resolution: Fetch role and retrieve assigned granular permissions ---
         var role = await _roleRepository.GetByIdAsync(user.RoleId, cancellationToken);
         if (role is null)
         {
             return Result.Failure<CashierLoginResponse>(UserErrors.RoleNotFound);
         }
 
-        // --- 9. Retrieve Granular Permissions Assigned to Role ---
         var permissions = await (
             from rpg in _readDb.RolePermissionGroups
             where rpg.RoleId == user.RoleId
@@ -103,18 +109,16 @@ public sealed class LoginWithPinCommandHandler : ICommandHandler<LoginWithPinCom
             select $"{p.Resource}:{p.Action}:{p.Scope}".ToLowerInvariant()
         ).Distinct().ToListAsync(cancellationToken);
 
-        // --- 10. Delegate Token Issuance to External Identity Provider (Keycloak) ---
+        // --- 7. Token Issuance: Delegate token generation to Keycloak and extract accurate expires_in ---
         var tokenResult = await _identityProviderService.GenerateUserTokenAsync(user.KeycloakUserId, cancellationToken);
         if (tokenResult.IsFailure)
         {
             return Result.Failure<CashierLoginResponse>(tokenResult.Error);
         }
 
-        const int tokenExpirySeconds = 28800; // 8 hours standard cashier shift duration
-
         return Result.Success(new CashierLoginResponse(
-            AccessToken: tokenResult.Value,
-            ExpiresInSeconds: tokenExpirySeconds,
+            AccessToken: tokenResult.Value.AccessToken,
+            ExpiresInSeconds: tokenResult.Value.ExpiresIn,
             CashierId: user.Id,
             Username: user.Username,
             FullName: user.FullName,

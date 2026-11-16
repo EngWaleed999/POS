@@ -404,14 +404,14 @@ public sealed class KeycloakIdentityProviderService : IIdentityProviderService
         }
     }
 
-    public async Task<Result<string>> GenerateUserTokenAsync(
+    public async Task<Result<IdentityProviderTokenResult>> GenerateUserTokenAsync(
         string keycloakUserId,
         CancellationToken cancellationToken = default)
     {
         var tokenResult = await GetAdminAccessTokenAsync(cancellationToken);
         if (tokenResult.IsFailure)
         {
-            return Result.Failure<string>(tokenResult.Error);
+            return Result.Failure<IdentityProviderTokenResult>(tokenResult.Error);
         }
 
         // OAuth2 Token Exchange (RFC 8693) to mint user-specific token
@@ -443,17 +443,19 @@ public sealed class KeycloakIdentityProviderService : IIdentityProviderService
                 var tokenResponse = JsonSerializer.Deserialize<KeycloakTokenResponse>(responseContent, JsonOptions);
                 if (tokenResponse?.AccessToken is not null)
                 {
-                    return Result.Success(tokenResponse.AccessToken);
+                    return Result.Success(new IdentityProviderTokenResult(
+                        tokenResponse.AccessToken,
+                        tokenResponse.ExpiresIn));
                 }
             }
 
             _logger.LogError("Keycloak token exchange failed with status {StatusCode}: {ErrorBody}", response.StatusCode, responseContent);
-            return Result.Failure<string>(UserErrors.IdentityProviderFailure);
+            return Result.Failure<IdentityProviderTokenResult>(UserErrors.IdentityProviderFailure);
         }
         catch (HttpRequestException ex)
         {
             _logger.LogError(ex, "Failed to exchange token for user {UserId}", keycloakUserId);
-            return Result.Failure<string>(UserErrors.IdentityProviderFailure);
+            return Result.Failure<IdentityProviderTokenResult>(UserErrors.IdentityProviderFailure);
         }
     }
 

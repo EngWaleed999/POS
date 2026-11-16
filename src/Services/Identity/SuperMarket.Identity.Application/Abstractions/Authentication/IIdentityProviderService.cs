@@ -34,7 +34,7 @@ public interface IIdentityProviderService
         string keycloakUserId,
         CancellationToken cancellationToken = default);
 
-    Task<Result<string>> GenerateUserTokenAsync(
+    Task<Result<IdentityProviderTokenResult>> GenerateUserTokenAsync(
         string keycloakUserId,
         CancellationToken cancellationToken = default);
 

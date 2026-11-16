@@ -135,6 +135,92 @@ public sealed class KeycloakIdentityProviderServiceTests
         result.Error.Should().Be(UserErrors.IdentityProviderFailure);
     }
 
+    [Fact]
+    public async Task GenerateUserTokenAsync_ShouldReturnTokenWithAccurateExpiresIn_WhenKeycloakReturns200()
+    {
+        // Arrange
+        HttpRequestMessage? capturedRequest = null;
+        const string expectedAccessToken = "ey-mocked-cashier-jwt-token";
+        const int expectedExpiresIn = 300; // 5 minutes actual Keycloak lifespan
+
+        var handler = new DelegatingTestHandler(request =>
+        {
+            capturedRequest = request;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $"{{\"access_token\":\"{expectedAccessToken}\",\"expires_in\":{expectedExpiresIn}}}",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            };
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new KeycloakIdentityProviderService(
+            httpClient,
+            _memoryCache,
+            _options,
+            NullLogger<KeycloakIdentityProviderService>.Instance);
+
+        // Act
+        var result = await service.GenerateUserTokenAsync(UserId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value.AccessToken.Should().Be(expectedAccessToken);
+        result.Value.ExpiresIn.Should().Be(expectedExpiresIn);
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Method.Should().Be(HttpMethod.Post);
+        capturedRequest.RequestUri!.ToString().Should().Be($"http://localhost:8080/realms/{TestRealm}/protocol/openid-connect/token");
+    }
+
+    [Fact]
+    public async Task GenerateUserTokenAsync_ShouldReturnFailure_WhenKeycloakReturnsErrorStatus()
+    {
+        // Arrange
+        var handler = new DelegatingTestHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("{\"error\":\"invalid_grant\",\"error_description\":\"User disabled\"}")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        var service = new KeycloakIdentityProviderService(
+            httpClient,
+            _memoryCache,
+            _options,
+            NullLogger<KeycloakIdentityProviderService>.Instance);
+
+        // Act
+        var result = await service.GenerateUserTokenAsync(UserId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(UserErrors.IdentityProviderFailure);
+    }
+
+    [Fact]
+    public async Task GenerateUserTokenAsync_ShouldReturnFailure_WhenNetworkExceptionOccurs()
+    {
+        // Arrange
+        var handler = new DelegatingTestHandler(_ => throw new HttpRequestException("Network failure"));
+
+        using var httpClient = new HttpClient(handler);
+        var service = new KeycloakIdentityProviderService(
+            httpClient,
+            _memoryCache,
+            _options,
+            NullLogger<KeycloakIdentityProviderService>.Instance);
+
+        // Act
+        var result = await service.GenerateUserTokenAsync(UserId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(UserErrors.IdentityProviderFailure);
+    }
+
     private sealed class DelegatingTestHandler(Func<HttpRequestMessage, HttpResponseMessage> sendHandler)
         : HttpMessageHandler
     {
