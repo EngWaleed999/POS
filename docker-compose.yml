@@ -28,6 +28,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
 
   # ---------------------------------------------------------------------------
   # 2. Keycloak Identity Provider (OAuth 2.0 / OpenID Connect)
@@ -50,6 +58,7 @@ services:
       KC_METRICS_ENABLED: "true"
       KC_HTTP_PORT: 8080
       KC_HOSTNAME_STRICT: "false"
+      JAVA_OPTS_APPEND: "-XX:MaxRAMPercentage=70.0"
     ports:
       - "${KEYCLOAK_HTTP_PORT}:8080"
       - "9000:9000" # Management port for Health checks and Metrics
@@ -71,6 +80,14 @@ services:
       retries: 5
       start_period: 30s
 
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2560MB
+        reservations:
+          cpus: '0.5'
+          memory: 1G
   # ---------------------------------------------------------------------------
   # 3. Redis In-Memory Store
   # Used for distributed caching, token revocation, and active shift state.
@@ -91,6 +108,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
   # ---------------------------------------------------------------------------
   # 4. RabbitMQ Message Broker
@@ -116,6 +141,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    
+    profiles: ["unused"]
+
 
   # ---------------------------------------------------------------------------
   # 5. LocalStack (AWS S3 Cloud Emulator)
@@ -134,6 +162,9 @@ services:
       - pos_localstack_data:/var/lib/localstack
     networks:
       - pos-net
+    
+    profiles: ["unused"]
+
 
   # ---------------------------------------------------------------------------
   # 6. Jaeger (Distributed Tracing Backend & Web UI)
@@ -152,6 +183,14 @@ services:
       # OTLP ports (4317/4318) are NOT exposed on host — owned exclusively by otel-collector
     networks:
       - pos-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ---------------------------------------------------------------------------
   # 7. OpenTelemetry Collector (Central Telemetry Gateway)
@@ -174,6 +213,14 @@ services:
       - loki
     networks:
       - pos-net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ---------------------------------------------------------------------------
   # 8. Grafana Loki (Centralized Log Aggregation Engine)
@@ -192,6 +239,15 @@ services:
       - "3100:3100" # Loki HTTP API & Native OTLP ingestion endpoint
     networks:
       - pos-net
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ---------------------------------------------------------------------------
   # 9. Prometheus (Metrics Server)
@@ -215,6 +271,15 @@ services:
       - otel-collector
     networks:
       - pos-net
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1536M
+        reservations:
+          cpus: '0.25'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # 8. Adminer (Database Management Web UI)
@@ -231,6 +296,14 @@ services:
         condition: service_healthy
     networks:
       - pos-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+        reservations:
+          cpus: '0.05'
+          memory: 32M
 
   # ---------------------------------------------------------------------------
   # 9. Grafana k6 (Load & Performance Testing Runner)
@@ -242,6 +315,7 @@ services:
     image: grafana/k6:latest
     container_name: pos-k6
     profiles:
+      - "unused"   
       - test
       - loadtest
     environment:
@@ -256,7 +330,6 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
-
   # ---------------------------------------------------------------------------
   # 11. Grafana (Unified Observability Dashboard — Single Pane of Glass)
   # Visualizes Prometheus metrics, Jaeger traces, and Loki logs in one UI.
@@ -282,6 +355,14 @@ services:
       - loki
     networks:
       - pos-net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
 
 # =============================================================================
 # Persistent Volumes Definition
