@@ -333,9 +333,16 @@ public sealed class RedisPermissionService : IPermissionService
         Guid userId,
         CancellationToken cancellationToken)
     {
+        // var userState = await _readDb.Users
+        //     .AsNoTracking()
+        //     .Where(u => u.Id == userId && !u.IsDeleted)
+        //     .Select(u => new { u.IsActive, u.RoleId })
+        //     .FirstOrDefaultAsync(cancellationToken);
+
+        var userIdString = userId.ToString();
         var userState = await _readDb.Users
             .AsNoTracking()
-            .Where(u => u.Id == userId && !u.IsDeleted)
+            .Where(u => (u.Id == userId || u.KeycloakUserId == userIdString) && !u.IsDeleted)
             .Select(u => new { u.IsActive, u.RoleId })
             .FirstOrDefaultAsync(cancellationToken);
 

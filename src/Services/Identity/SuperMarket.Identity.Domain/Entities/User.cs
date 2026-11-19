@@ -155,8 +155,12 @@ public sealed class User : AggregateRoot<Guid>, IAuditableEntity, ISoftDeletable
             ? null
             : email.Trim().ToLowerInvariant();
 
+          var userId = Guid.TryParse(keycloakUserId.Trim(), out var parsedId)                                                                                                                       
+                ? parsedId                                                                                                                                                                            
+                : Guid.NewGuid();         
+
         var user = new User(
-            id: Guid.NewGuid(),
+            id: userId,
             username: username.Trim(),
             phoneNumber: phoneNumber.Trim(),
             email: sanitizedEmail,
