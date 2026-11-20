@@ -63,7 +63,7 @@ function Get-HttpStatusCode {
 
 function Write-Utf8NoBom {
     param([string]$Path, [string]$Content)
-    $encoding = New-Object System.Text.UTF8Encoding($false)
+    $encoding = [System.Text.UTF8Encoding]::new($false)
     [System.IO.File]::WriteAllText($Path, $Content, $encoding)
 }
 
