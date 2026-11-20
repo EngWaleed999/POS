@@ -111,8 +111,8 @@ publish
 
 
 # Never commit real tokens, PINs, or passwords.
-tests_production
-/data/staff-tokens.json
-/data/cashiers.json
-/results/**
-!/results/.gitkeep
+# tests_production
+# /data/staff-tokens.json
+# /data/cashiers.json
+# /results/**
+# !/results/.gitkeep
