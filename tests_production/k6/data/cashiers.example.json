@@ -1,0 +1,7 @@
+[
+  {
+    "username": "REPLACE_WITH_TEST_CASHIER_USERNAME",
+    "pin": "REPLACE_WITH_TEST_PIN",
+    "registerId": "REPLACE_WITH_ACTIVE_REGISTER_GUID"
+  }
+]

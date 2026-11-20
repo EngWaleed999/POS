@@ -36,6 +36,23 @@ public sealed class UserTests
                 e.UserId == user.Id && e.Username == "cashier01" && e.Email == "ahmed@store.com");
     }
 
+    [Fact]
+    public void Create_ShouldUseKeycloakGuidAsLocalUserId_WhenKeycloakSubjectIsGuid()
+    {
+        var keycloakUserId = Guid.NewGuid();
+
+        var result = User.Create(
+            "perf.reader",
+            "+967770001001",
+            $"  {keycloakUserId:D}  ",
+            "Performance Reader",
+            ValidRoleId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(keycloakUserId);
+        result.Value.KeycloakUserId.Should().Be(keycloakUserId.ToString());
+    }
+
     // =========================================================================
     // 2. Data-Driven Validation Matrix ([Theory] + [InlineData])
     // =========================================================================

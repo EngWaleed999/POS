@@ -110,9 +110,8 @@ infrastructure
 publish
 
 
-# Never commit real tokens, PINs, or passwords.
-# tests_production
-# /data/staff-tokens.json
-# /data/cashiers.json
-# /results/**
-# !/results/.gitkeep
+# Benchmark credentials and generated evidence must stay local.
+tests_production/k6/data/staff-tokens.json
+tests_production/k6/data/cashiers.json
+tests_production/k6/results/**
+!tests_production/k6/results/.gitkeep

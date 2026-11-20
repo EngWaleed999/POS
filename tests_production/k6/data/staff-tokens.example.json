@@ -1,0 +1,6 @@
+[
+  {
+    "label": "perf-reader-01",
+    "token": "REPLACE_WITH_VALID_JWT_FOR_A_USER_WITH_users:read"
+  }
+]
